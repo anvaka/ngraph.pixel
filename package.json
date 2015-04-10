@@ -1,0 +1,18 @@
+{
+  "name": "ngraph.pixel",
+  "version": "0.1.0",
+  "description": "3d graph renderer based on particle material and three.js",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "graph"
+  ],
+  "author": "Andrei Kashcha",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anvaka/ngraph.pixel"
+  }
+}
