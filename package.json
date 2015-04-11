@@ -27,7 +27,8 @@
     "url": "https://github.com/anvaka/ngraph.pixel"
   },
   "dependencies": {
-    "ngraph.forcelayout3d": "0.0.8",
+    "ngraph.forcelayout": "0.0.18",
+    "ngraph.forcelayout3d": "0.0.9",
     "three": "^0.70.0",
     "three.fly": "0.0.0"
   },

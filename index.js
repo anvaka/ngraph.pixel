@@ -11,7 +11,7 @@ function pixel(graph, options) {
   options = options || {};
 
   var container = options.layout || document.body;
-  var layout = options.layout || require('ngraph.forcelayout3d')(graph, options.physicsSettings);
+  var layout = options.layout || require('ngraph.forcelayout')(graph, options.physicsSettings);
   var isStable = false;
   var nodeIdToIdx = Object.create(null);
 
@@ -50,6 +50,9 @@ function pixel(graph, options) {
 
     function addNodePosition(node) {
       var position = layout.getNodePosition(node.id);
+      if (position.z === undefined) {
+        position.z = 0;
+      }
       nodePositions.push(position);
       nodeIdToIdx[node.id] = idx;
       idx += 1;
