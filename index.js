@@ -4,27 +4,41 @@ var createNodeView = require('./lib/nodeView.js');
 var createEdgeView = require('./lib/edgeView.js');
 var createAutoFit = require('./lib/autofit.js');
 var createInput = require('./lib/input.js');
+var layout3d = require('ngraph.forcelayout3d');
+var layout2d = require('ngraph.forcelayout');
+var validateOptions = require('./options.js');
 
 function pixel(graph, options) {
   var api = {
+    is3d: mode3d
   };
-  options = options || {};
-  // Let the renderer automatically fit the graph to available screen
-  options.autoFit = options.autoFit !== undefined ? options.autoFit : true;
-  options.container = options.container || document.body;
+
+  options = validateOptions(options);
 
   var container = options.container;
-  var layout = options.layout || require('ngraph.forcelayout3d')(graph, options.physicsSettings);
+  var is3d = options.is3d;
+  var layout = is3d ? layout3d(graph, options.physicsSettings) : layout2d(graph, options.physicsSettings);
   var isStable = false;
   var nodeIdToIdx = Object.create(null);
 
   var scene, camera, renderer;
   var nodeView, edgeView, autoFit, input;
+  var nodePositions;
 
   init();
   run();
 
   return api;
+
+  function mode3d(newMode) {
+    if (newMode === undefined) {
+      return is3d;
+    }
+    if (newMode !== is3d) {
+      toggleLayout();
+    }
+    return api;
+  }
 
   function run(time) {
     requestAnimationFrame(run);
@@ -49,8 +63,8 @@ function pixel(graph, options) {
 
   function initPositions() {
     var idx = 0;
-    var nodePositions = [];
     var edgePositions = [];
+    nodePositions = [];
     graph.forEachNode(addNodePosition);
     graph.forEachLink(addEdgePosition);
 
@@ -59,9 +73,7 @@ function pixel(graph, options) {
 
     function addNodePosition(node) {
       var position = layout.getNodePosition(node.id);
-      if (position.z === undefined) {
-        position.z = 0;
-      }
+      if (!is3d) position.z = 0;
       nodePositions.push(position);
       nodeIdToIdx[node.id] = idx;
       idx += 1;
@@ -84,19 +96,44 @@ function pixel(graph, options) {
     scene.add(camera);
     nodeView = createNodeView(scene);
     edgeView = createEdgeView(scene);
-    if (options.autoFit) {
-      autoFit = createAutoFit(nodeView, camera);
-    }
+
+    if (options.autoFit) autoFit = createAutoFit(nodeView, camera);
+
     input = createInput(camera, graph, options);
     input.on('move', stopAutoFit);
+    input.onKey(options.layoutToggleKey, toggleLayout);
 
     renderer = new THREE.WebGLRenderer({
       antialias: false
     });
-    renderer.setClearColor(0x000000, 1);
+    renderer.setClearColor(options.clearColor, 1);
     renderer.setSize(container.clientWidth, container.clientHeight);
     container.appendChild(renderer.domElement);
     window.addEventListener('resize', onWindowResize, false);
+  }
+
+
+  function toggleLayout() {
+    layout.dispose();
+    is3d = !is3d;
+    if (is3d) {
+      layout = layout3d(graph, options.physicsSettings);
+    } else {
+      layout = layout2d(graph, options.physicsSettings);
+    }
+    Object.keys(nodeIdToIdx).forEach(initLayout);
+
+    initPositions();
+    isStable = false;
+
+    function initLayout(nodeId) {
+      var idx = nodeIdToIdx[nodeId];
+      var pos = nodePositions[idx];
+      // we need to bump 3d positions, so that forces are disturbed:
+      if (is3d) pos.z = (idx % 2 === 0) ? -1 : 1;
+      else pos.z = 0;
+      layout.setNodePosition(nodeId, pos.x, pos.y, pos.z);
+    }
   }
 
   function stopAutoFit() {
