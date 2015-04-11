@@ -4,7 +4,8 @@
   "description": "3d graph renderer based on particle material and three.js",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "browserify demo/index.js > demo/bundle.js"
   },
   "keywords": [
     "graph",
