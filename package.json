@@ -7,12 +7,34 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
-    "graph"
+    "graph",
+    "ngraph",
+    "layout",
+    "renderer",
+    "render",
+    "webgl",
+    "particle"
   ],
+  "browserify": {
+    "transform": [
+      "glslify"
+    ]
+  },
   "author": "Andrei Kashcha",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/anvaka/ngraph.pixel"
+  },
+  "dependencies": {
+    "ngraph.forcelayout3d": "0.0.8",
+    "three": "^0.70.0",
+    "three.fly": "0.0.0"
+  },
+  "devDependencies": {
+    "browserify": "^9.0.8",
+    "glslify": "^2.1.1",
+    "ngraph.generators": "0.0.15",
+    "query-string": "^1.0.0"
   }
 }
