@@ -15,11 +15,13 @@ function pixel(graph, options) {
 
   options = validateOptions(options);
 
+  var tooltipDom, tooltipVisible;
   var container = options.container;
   var is3d = options.is3d;
   var layout = is3d ? layout3d(graph, options.physicsSettings) : layout2d(graph, options.physicsSettings);
   var isStable = false;
   var nodeIdToIdx = Object.create(null);
+  var nodeIdxToId = [];
 
   var scene, camera, renderer;
   var nodeView, edgeView, autoFit, input;
@@ -76,6 +78,7 @@ function pixel(graph, options) {
       if (!is3d) position.z = 0;
       nodePositions.push(position);
       nodeIdToIdx[node.id] = idx;
+      nodeIdxToId[idx] = node.id;
       idx += 1;
     }
 
@@ -102,6 +105,7 @@ function pixel(graph, options) {
     input = createInput(camera, graph, options);
     input.on('move', stopAutoFit);
     input.onKey(options.layoutToggleKey, toggleLayout);
+    input.on('nodehover', setTooltip);
 
     renderer = new THREE.WebGLRenderer({
       antialias: false
@@ -109,9 +113,39 @@ function pixel(graph, options) {
     renderer.setClearColor(options.clearColor, 1);
     renderer.setSize(container.clientWidth, container.clientHeight);
     container.appendChild(renderer.domElement);
+
     window.addEventListener('resize', onWindowResize, false);
   }
 
+  function setTooltip(args) {
+    if (args.nodeIndex !== undefined) {
+      var node = graph.getNode(nodeIdxToId[args.nodeIndex]);
+      showTooltip(args, node);
+    } else {
+      hideTooltip(args);
+    }
+  }
+
+  function showTooltip(e, node) {
+    if (!tooltipDom) {
+      tooltipDom = document.createElement('div');
+      tooltipDom.style.position = 'absolute';
+      tooltipDom.style.color = 'white';
+      container.appendChild(tooltipDom);
+    }
+    tooltipDom.style.left = e.x + 'px';
+    tooltipDom.style.top = e.y + 'px';
+    tooltipDom.innerHTML = node.id;
+    tooltipVisible = true;
+  }
+
+  function hideTooltip() {
+    if (tooltipVisible) {
+      tooltipDom.style.left = '-10000px';
+      tooltipDom.style.top = '-10000px';
+      tooltipVisible = false;
+    }
+  }
 
   function toggleLayout() {
     layout.dispose();
@@ -124,6 +158,7 @@ function pixel(graph, options) {
     Object.keys(nodeIdToIdx).forEach(initLayout);
 
     initPositions();
+    input.reset();
     isStable = false;
 
     function initLayout(nodeId) {
