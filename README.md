@@ -1,6 +1,6 @@
 # ngraph.pixel
 
-3d graph renderer based on particle material and three.js
+3d/2d graph renderer based on particle material and three.js
 
 # usage
 
