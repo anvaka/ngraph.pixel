@@ -10,7 +10,10 @@ var validateOptions = require('./options.js');
 
 function pixel(graph, options) {
   var api = {
-    is3d: mode3d
+    is3d: mode3d,
+    nodeSize: nodeSize,
+    nodeColor: nodeColor,
+    linkColor: linkColor
   };
 
   options = validateOptions(options);
@@ -21,11 +24,12 @@ function pixel(graph, options) {
   var layout = is3d ? layout3d(graph, options.physicsSettings) : layout2d(graph, options.physicsSettings);
   var isStable = false;
   var nodeIdToIdx = Object.create(null);
+  var edgeIdToIdx = Object.create(null);
   var nodeIdxToId = [];
 
   var scene, camera, renderer;
   var nodeView, edgeView, autoFit, input;
-  var nodePositions;
+  var nodePositions, edgePositions;
 
   init();
   run();
@@ -65,7 +69,7 @@ function pixel(graph, options) {
 
   function initPositions() {
     var idx = 0;
-    var edgePositions = [];
+    edgePositions = [];
     nodePositions = [];
     graph.forEachNode(addNodePosition);
     graph.forEachLink(addEdgePosition);
@@ -83,6 +87,8 @@ function pixel(graph, options) {
     }
 
     function addEdgePosition(edge) {
+      var edgeOffset = edgePositions.length;
+      edgeIdToIdx[edge.id] = edgeOffset;
       edgePositions.push(nodePositions[nodeIdToIdx[edge.fromId]], nodePositions[nodeIdToIdx[edge.toId]]);
     }
   }
@@ -117,6 +123,32 @@ function pixel(graph, options) {
     window.addEventListener('resize', onWindowResize, false);
   }
 
+  function nodeColor(nodeId, color) {
+    var idx = getNodeIdxByNodeId(nodeId);
+    return nodeView.color(idx, color);
+  }
+
+  function nodeSize(nodeId, size) {
+    var idx = getNodeIdxByNodeId(nodeId);
+    return nodeView.size(idx, size);
+  }
+
+  function linkColor(linkId, fromColorHex, toColorHex) {
+    var idx = edgeIdToIdx[linkId];
+    var idxValid = (0 <= idx && idx < edgePositions.length);
+    if (!idxValid) throw new Error('Link index is not valid ' + linkId);
+    return edgeView.color(idx, fromColorHex, toColorHex);
+  }
+
+  function getNodeIdxByNodeId(nodeId) {
+    var idx = nodeIdToIdx[nodeId];
+    if (idx === undefined) throw new Error('Cannot find node with id ' + nodeId);
+    var idxValid = (0 <= idx && idx < graph.getNodesCount());
+    if (!idxValid) throw new Error('Node index is out of range' + nodeId);
+
+    return idx;
+  }
+
   function setTooltip(args) {
     if (args.nodeIndex !== undefined) {
       var node = graph.getNode(nodeIdxToId[args.nodeIndex]);
@@ -126,6 +158,7 @@ function pixel(graph, options) {
     }
   }
 
+  // TODO: move tooltip into its own module, make customizeable
   function showTooltip(e, node) {
     if (!tooltipDom) {
       tooltipDom = document.createElement('div');

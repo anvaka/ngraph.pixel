@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "browserify demo/basic/index.js > demo/basic/bundle.js"
+    "basic": "browserify demo/basic/index.js > demo/basic/bundle.js",
+    "colors": "browserify demo/colors/index.js > demo/colors/bundle.js",
+    "start": "npm run basic && npm run colors"
   },
   "keywords": [
     "graph",
