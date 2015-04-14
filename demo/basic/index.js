@@ -1,6 +1,6 @@
 var query = require('query-string').parse(window.location.search.substring(1));
 var graph = getGraphFromQueryString(query);
-var renderGraph = require('../');
+var renderGraph = require('../../');
 
 renderGraph(graph);
 
