@@ -9,18 +9,33 @@ var layout2d = require('ngraph.forcelayout');
 var validateOptions = require('./options.js');
 
 function pixel(graph, options) {
+  // This is our public API.
   var api = {
     /**
      * Toggle rendering mode between 2d and 3d
+     *
+     * @param {boolean+} newMode if set to true, the renderer will switch to 3d
+     * rendering mode. If set to false, the renderer will switch to 2d mode.
+     * Finally if this argument is not defined, then current rendering mode is
+     * returned.
      */
     is3d: mode3d,
+
     /**
      * Set or get size of a node
+     *
+     * @param {string} nodeId identifier of a node in question
+     * @param {number+} size if undefined, then current node size is returned;
+     * Otherwise the new value is set.
      */
     nodeSize: nodeSize,
 
     /**
      * Set or get color of a node
+     *
+     * @param {string} nodeId identifier of a node in question
+     * @param {number+} color rgb color hex code. If not specified, then current
+     * node color is returned. Otherwise the new color is assigned to the node.
      */
     nodeColor: nodeColor,
 
@@ -33,6 +48,10 @@ function pixel(graph, options) {
      * specified the same value as `fromColorHex` is used.
      */
     linkColor: linkColor,
+
+    /**
+     * attempts to fit graph into available screen size
+     */
     autoFit: autoFit
   };
 
@@ -48,7 +67,7 @@ function pixel(graph, options) {
   var nodeIdxToId = [];
 
   var scene, camera, renderer;
-  var nodeView, edgeView, autoFit, input;
+  var nodeView, edgeView, autoFitController, input;
   var nodePositions, edgePositions;
 
   init();
@@ -66,7 +85,7 @@ function pixel(graph, options) {
     return api;
   }
 
-  function run(time) {
+  function run() {
     requestAnimationFrame(run);
 
     if (!isStable) {
@@ -76,8 +95,8 @@ function pixel(graph, options) {
     }
 
     input.update();
-    if (autoFit) {
-      autoFit.update(time);
+    if (autoFitController) {
+      autoFitController.update();
     }
     renderer.render(scene, camera);
   }
@@ -126,7 +145,7 @@ function pixel(graph, options) {
     nodeView = createNodeView(scene);
     edgeView = createEdgeView(scene);
 
-    if (options.autoFit) autoFit = createAutoFit(nodeView, camera);
+    if (options.autoFit) autoFitController = createAutoFit(nodeView, camera);
 
     input = createInput(camera, graph, options);
     input.on('move', stopAutoFit);
@@ -226,12 +245,18 @@ function pixel(graph, options) {
 
   function stopAutoFit() {
     input.off('move');
-    autoFit = null;
+    autoFitController = null;
   }
 
   function onWindowResize() {
     camera.aspect = container.clientWidth / container.clientHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(container.clientWidth, container.clientHeight);
+  }
+
+  function autoFit() {
+    if (autoFitController) return; // we are already auto-fitting the graph.
+    // otherwise fire and forget autofit:
+    createAutoFit(nodeView, camera).update();
   }
 }
