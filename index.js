@@ -147,17 +147,17 @@ function pixel(graph, options) {
 
     if (options.autoFit) autoFitController = createAutoFit(nodeView, camera);
 
-    input = createInput(camera, graph, options);
-    input.on('move', stopAutoFit);
-    input.onKey(options.layoutToggleKey, toggleLayout);
-    input.on('nodehover', setTooltip);
-
     renderer = new THREE.WebGLRenderer({
       antialias: false
     });
     renderer.setClearColor(options.clearColor, 1);
     renderer.setSize(container.clientWidth, container.clientHeight);
     container.appendChild(renderer.domElement);
+
+    input = createInput(camera, graph, renderer.domElement);
+    input.on('move', stopAutoFit);
+    input.onKey(options.layoutToggleKey, toggleLayout);
+    input.on('nodehover', setTooltip);
 
     window.addEventListener('resize', onWindowResize, false);
   }
