@@ -10,10 +10,30 @@ var validateOptions = require('./options.js');
 
 function pixel(graph, options) {
   var api = {
+    /**
+     * Toggle rendering mode between 2d and 3d
+     */
     is3d: mode3d,
+    /**
+     * Set or get size of a node
+     */
     nodeSize: nodeSize,
+
+    /**
+     * Set or get color of a node
+     */
     nodeColor: nodeColor,
-    linkColor: linkColor
+
+    /**
+     * Sets color of a link
+     *
+     * @param {string} linkId identifier of a link.
+     * @param {number} fromColorHex - rgb color hex code of a link start
+     * @param {number+} toColorHex - rgb color hex code of theh link end. If not
+     * specified the same value as `fromColorHex` is used.
+     */
+    linkColor: linkColor,
+    autoFit: autoFit
   };
 
   options = validateOptions(options);
