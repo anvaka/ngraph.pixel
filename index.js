@@ -21,7 +21,7 @@ function pixel(graph, options) {
   var tooltipDom, tooltipVisible;
   var container = options.container;
   var is3d = options.is3d;
-  var layout = is3d ? layout3d(graph, options.physicsSettings) : layout2d(graph, options.physicsSettings);
+  var layout = is3d ? layout3d(graph, options.physics) : layout2d(graph, options.physics);
   var isStable = false;
   var nodeIdToIdx = Object.create(null);
   var edgeIdToIdx = Object.create(null);
@@ -184,9 +184,9 @@ function pixel(graph, options) {
     layout.dispose();
     is3d = !is3d;
     if (is3d) {
-      layout = layout3d(graph, options.physicsSettings);
+      layout = layout3d(graph, options.physics);
     } else {
-      layout = layout2d(graph, options.physicsSettings);
+      layout = layout2d(graph, options.physics);
     }
     Object.keys(nodeIdToIdx).forEach(initLayout);
 
