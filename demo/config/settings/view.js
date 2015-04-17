@@ -12,9 +12,11 @@ function addGlobalViewSettings(renderer, gui) {
     linkStartColor: [0x33, 0x33, 0x33],
     linkEndColor: [0x33, 0x33, 0x33],
     nodeSize: 15,
-    is3d: true
+    is3d: true,
+    stable: changeStable
   };
 
+  var stableController = folder.add(model, 'stable').setName('Pause Layout');
   folder.addColor(model, 'nodeColor').onChange(setNodeColor);
   folder.add(model, 'nodeSize', 0, 200).onChange(setNodeSize);
   folder.addColor(model, 'linkStartColor').onChange(setLinkColor);
@@ -24,6 +26,17 @@ function addGlobalViewSettings(renderer, gui) {
 
   // whenever user changes mode via API/keyboard, reflect it in our UI:
   renderer.on('modeChanged', updateMode);
+  renderer.on('stable', updateStableUI);
+
+  function changeStable() {
+    renderer.stable(!renderer.stable());
+    renderer.focus();
+  }
+
+  function updateStableUI() {
+    var isStable = renderer.stable();
+    stableController.setName(isStable ? 'Resume Layout' : 'Pause Layout');
+  }
 
   function updateMode(newMode) {
     model.is3d = newMode;

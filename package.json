@@ -31,10 +31,11 @@
     "url": "https://github.com/anvaka/ngraph.pixel"
   },
   "dependencies": {
+    "exdat": "0.6.0",
+    "glslify": "^2.1.1",
     "ngraph.events": "0.0.3",
     "ngraph.forcelayout3d": "0.0.12",
     "three": "^0.70.0",
-    "glslify": "^2.1.1",
     "three.fly": "0.1.1"
   },
   "devDependencies": {
