@@ -1,13 +1,10 @@
 var query = require('query-string').parse(window.location.search.substring(1));
-var dat = require('exdat');
 var graph = getGraphFromQueryString(query);
 var renderGraph = require('../../');
 
-var renderer = renderGraph(graph);
-
-// Here we add user interface to change various parameters of the renderer:
-var settings = require('./settings/index.js');
-settings(renderer, dat);
+renderGraph(graph, {
+  settings: true // request to render settings user interface
+});
 
 function getGraphFromQueryString(query) {
   var graphGenerators = require('ngraph.generators');

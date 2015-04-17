@@ -2,7 +2,7 @@ var query = require('query-string').parse(window.location.search.substring(1));
 var graph = getGraphFromQueryString(query);
 var renderGraph = require('../../');
 
-renderGraph(graph);
+window.r =renderGraph(graph);
 
 function getGraphFromQueryString(query) {
    var graphGenerators = require('ngraph.generators');
