@@ -7,7 +7,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "basic": "browserify demo/basic/index.js > demo/basic/bundle.js",
     "colors": "browserify demo/colors/index.js > demo/colors/bundle.js",
-    "start": "npm run basic && npm run colors"
+    "config": "browserify demo/config/index.js > demo/config/bundle.js",
+    "start": "npm run basic && npm run colors && npm run config"
   },
   "keywords": [
     "graph",
@@ -31,8 +32,7 @@
   },
   "dependencies": {
     "ngraph.events": "0.0.3",
-    "ngraph.forcelayout": "0.0.18",
-    "ngraph.forcelayout3d": "0.0.9",
+    "ngraph.forcelayout3d": "0.0.12",
     "three": "^0.70.0",
     "glslify": "^2.1.1",
     "three.fly": "0.1.0"

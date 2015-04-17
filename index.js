@@ -5,7 +5,7 @@ var createEdgeView = require('./lib/edgeView.js');
 var createAutoFit = require('./lib/autoFit.js');
 var createInput = require('./lib/input.js');
 var layout3d = require('ngraph.forcelayout3d');
-var layout2d = require('ngraph.forcelayout');
+var layout2d = layout3d.get2dLayout;
 var validateOptions = require('./options.js');
 
 function pixel(graph, options) {
@@ -34,8 +34,10 @@ function pixel(graph, options) {
      * Set or get color of a node
      *
      * @param {string} nodeId identifier of a node in question
-     * @param {number+} color rgb color hex code. If not specified, then current
+     * @param {number+|Array} color rgb color hex code. If not specified, then current
      * node color is returned. Otherwise the new color is assigned to the node.
+     * This value can also be an array of three arguments, in that case each element
+     * of the array is considered to be [r, g, b]
      */
     nodeColor: nodeColor,
 
@@ -52,7 +54,37 @@ function pixel(graph, options) {
     /**
      * attempts to fit graph into available screen size
      */
-    autoFit: autoFit
+    autoFit: autoFit,
+
+    /**
+     * Returns current layout manager
+     */
+    layout: getLayout,
+
+    /**
+     * Gets or sets value which indicates whether layout is stable. When layout
+     * is stable, then no additional layout iterations are required. The renderer
+     * will stop calling `layout.step()`, which in turn will save CPU cycles.
+     *
+     * @param {boolean+} stableValue if this value is not specified, then current
+     * value of `isStable` will be returned. Otherwise the simulator stable flag
+     * will be forcefully set to the given value.
+     */
+    stable: stable,
+
+    /**
+     * Gets or sets graph that is rendered now
+     *
+     * @param {ngraph.graph+} graphValue if this value is not specified then current
+     * graph is returned. Otherwise renderer destroys current scene, and starts
+     * render new graph.
+     */
+    graph: graphInternal,
+
+    /**
+     * Attempts to give keyboard input focuse to the scene
+     */
+    focus: focus
   };
 
   options = validateOptions(options);
@@ -74,6 +106,7 @@ function pixel(graph, options) {
   run();
 
   return api;
+
 
   function mode3d(newMode) {
     if (newMode === undefined) {
@@ -164,7 +197,7 @@ function pixel(graph, options) {
 
   function nodeColor(nodeId, color) {
     var idx = getNodeIdxByNodeId(nodeId);
-    return nodeView.color(idx, color);
+    return nodeView.color(idx, normalizeColor(color));
   }
 
   function nodeSize(nodeId, size) {
@@ -176,7 +209,7 @@ function pixel(graph, options) {
     var idx = edgeIdToIdx[linkId];
     var idxValid = (0 <= idx && idx < edgePositions.length);
     if (!idxValid) throw new Error('Link index is not valid ' + linkId);
-    return edgeView.color(idx, fromColorHex, toColorHex);
+    return edgeView.color(idx, normalizeColor(fromColorHex), normalizeColor(toColorHex));
   }
 
   function getNodeIdxByNodeId(nodeId) {
@@ -222,10 +255,12 @@ function pixel(graph, options) {
   function toggleLayout() {
     layout.dispose();
     is3d = !is3d;
+    var physics = copyPhysicsSettings(layout.simulator);
+
     if (is3d) {
-      layout = layout3d(graph, options.physics);
+      layout = layout3d(graph, physics);
     } else {
-      layout = layout2d(graph, options.physics);
+      layout = layout2d(graph, physics);
     }
     Object.keys(nodeIdToIdx).forEach(initLayout);
 
@@ -243,6 +278,17 @@ function pixel(graph, options) {
     }
   }
 
+  function copyPhysicsSettings(simulator) {
+    return {
+      springLength: simulator.springLength(),
+      springCoeff: simulator.springCoeff(),
+      gravity: simulator.gravity(),
+      theta: simulator.theta(),
+      dragCoeff: simulator.dragCoeff(),
+      timeStep: simulator.timeStep()
+    };
+  }
+
   function stopAutoFit() {
     input.off('move');
     autoFitController = null;
@@ -258,5 +304,32 @@ function pixel(graph, options) {
     if (autoFitController) return; // we are already auto-fitting the graph.
     // otherwise fire and forget autofit:
     createAutoFit(nodeView, camera).update();
+  }
+
+  function getLayout() {
+    return layout;
+  }
+
+  function stable(stableValue) {
+    if (stableValue === undefined) return isStable;
+    isStable = stableValue;
+  }
+
+  function graphInternal(newGraph) {
+    if (newGraph !== undefined) throw new Error('Not implemented, Anvaka, do it!');
+    return graph;
+  }
+
+  function normalizeColor(color) {
+    if (color === undefined) return color;
+    var colorType = typeof color;
+    if (colorType === 'number') return color;
+    if (color.length === 3) return (color[0] << 16) | (color[1] << 8) | (color[2]);
+    throw new Error('Unrecognized color type: ' + color);
+  }
+
+  function focus() {
+    var sceneElement = renderer && renderer.domElement;
+    if (sceneElement && typeof sceneElement.focus === 'function') sceneElement.focus();
   }
 }
