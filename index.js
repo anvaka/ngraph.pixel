@@ -1,5 +1,6 @@
 module.exports = pixel;
 var THREE = require('three');
+var eventify = require('ngraph.events');
 var createNodeView = require('./lib/nodeView.js');
 var createEdgeView = require('./lib/edgeView.js');
 var createAutoFit = require('./lib/autoFit.js');
@@ -86,6 +87,7 @@ function pixel(graph, options) {
      */
     focus: focus
   };
+  eventify(api);
 
   options = validateOptions(options);
 
@@ -104,9 +106,9 @@ function pixel(graph, options) {
 
   init();
   run();
+  focus();
 
   return api;
-
 
   function mode3d(newMode) {
     if (newMode === undefined) {
@@ -267,6 +269,7 @@ function pixel(graph, options) {
     initPositions();
     input.reset();
     isStable = false;
+    api.fire('modeChanged', is3d);
 
     function initLayout(nodeId) {
       var idx = nodeIdToIdx[nodeId];

@@ -2,10 +2,11 @@
 var query = require('query-string').parse(window.location.search.substring(1));
 var graph = getGraphFromQueryString(query);
 var renderGraph = require('../../');
-var settings = require('./settings.js');
 
 var renderer = renderGraph(graph);
 
+// Here we add user interface to change various parameters of the renderer:
+var settings = require('./settings/index.js');
 settings(renderer, dat);
 
 function getGraphFromQueryString(query) {
