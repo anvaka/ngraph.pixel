@@ -4,6 +4,7 @@ var eventify = require('ngraph.events');
 var createNodeView = require('./lib/nodeView.js');
 var createEdgeView = require('./lib/edgeView.js');
 var createSettingsView = require('./lib/settings/index.js');
+var createTooltipView = require('./lib/tooltip.js');
 var createAutoFit = require('./lib/autoFit.js');
 var createInput = require('./lib/input.js');
 var layout3d = require('ngraph.forcelayout3d');
@@ -99,7 +100,6 @@ function pixel(graph, options) {
 
   options = validateOptions(options);
 
-  var tooltipDom, tooltipVisible;
   var container = options.container;
   var is3d = options.is3d;
   var layout = is3d ? layout3d(graph, options.physics) : layout2d(graph, options.physics);
@@ -111,6 +111,7 @@ function pixel(graph, options) {
   var scene, camera, renderer;
   var nodeView, edgeView, autoFitController, input;
   var nodePositions, edgePositions;
+  var tooltipView = createTooltipView(container);
 
   init();
   run();
@@ -240,34 +241,12 @@ function pixel(graph, options) {
     return idx;
   }
 
-  function setTooltip(args) {
-    if (args.nodeIndex !== undefined) {
-      var node = graph.getNode(nodeIdxToId[args.nodeIndex]);
-      showTooltip(args, node);
+  function setTooltip(e) {
+    if (e.nodeIndex !== undefined) {
+      var node = graph.getNode(nodeIdxToId[e.nodeIndex]);
+      tooltipView.show(e, node);
     } else {
-      hideTooltip(args);
-    }
-  }
-
-  // TODO: move tooltip into its own module, make customizeable
-  function showTooltip(e, node) {
-    if (!tooltipDom) {
-      tooltipDom = document.createElement('div');
-      tooltipDom.style.position = 'absolute';
-      tooltipDom.style.color = 'white';
-      container.appendChild(tooltipDom);
-    }
-    tooltipDom.style.left = e.x + 'px';
-    tooltipDom.style.top = e.y + 'px';
-    tooltipDom.innerHTML = node.id;
-    tooltipVisible = true;
-  }
-
-  function hideTooltip() {
-    if (tooltipVisible) {
-      tooltipDom.style.left = '-10000px';
-      tooltipDom.style.top = '-10000px';
-      tooltipVisible = false;
+      tooltipView.hide(e);
     }
   }
 

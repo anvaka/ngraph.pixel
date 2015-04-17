@@ -21,7 +21,8 @@
   ],
   "browserify": {
     "transform": [
-      "glslify"
+      "glslify",
+      "brfs"
     ]
   },
   "author": "Andrei Kashcha",
@@ -31,8 +32,11 @@
     "url": "https://github.com/anvaka/ngraph.pixel"
   },
   "dependencies": {
+    "brfs": "^1.4.0",
+    "element-class": "^0.2.0",
     "exdat": "0.6.0",
     "glslify": "^2.1.1",
+    "insert-css": "^0.2.0",
     "ngraph.events": "0.0.3",
     "ngraph.forcelayout3d": "0.0.12",
     "three": "^0.70.0",

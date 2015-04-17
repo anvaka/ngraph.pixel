@@ -1,0 +1,5 @@
+.ngraph-tooltip {
+  position: absolute;
+  color: white;
+  pointer-events: none;
+}
