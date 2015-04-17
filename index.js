@@ -87,6 +87,7 @@ function pixel(graph, options) {
      */
     focus: focus
   };
+
   eventify(api);
 
   options = validateOptions(options);
@@ -127,7 +128,14 @@ function pixel(graph, options) {
       isStable = layout.step();
       nodeView.update();
       edgeView.update();
+    } else {
+      // we may not want to change positions, but colors/size could be changed
+      // at this moment, so let's take care of that:
+      if (nodeView.needsUpdate()) nodeView.update();
+      if (edgeView.needsUpdate()) edgeView.update();
     }
+
+    if (isStable) api.fire('stable', true);
 
     input.update();
     if (autoFitController) {
@@ -268,7 +276,7 @@ function pixel(graph, options) {
 
     initPositions();
     input.reset();
-    isStable = false;
+    stable(false);
     api.fire('modeChanged', is3d);
 
     function initLayout(nodeId) {
@@ -316,6 +324,7 @@ function pixel(graph, options) {
   function stable(stableValue) {
     if (stableValue === undefined) return isStable;
     isStable = stableValue;
+    api.fire('stable', isStable);
   }
 
   function graphInternal(newGraph) {
@@ -327,8 +336,16 @@ function pixel(graph, options) {
     if (color === undefined) return color;
     var colorType = typeof color;
     if (colorType === 'number') return color;
+    if (colorType === 'string') return parseStringColor(color);
     if (color.length === 3) return (color[0] << 16) | (color[1] << 8) | (color[2]);
     throw new Error('Unrecognized color type: ' + color);
+  }
+
+  function parseStringColor(color) {
+    if (color[0] === '#') {
+      return Number.parseInt(color.substring(1), 16);
+    }
+    return Number.parseInt(color, 16);
   }
 
   function focus() {
