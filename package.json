@@ -34,7 +34,7 @@
   "dependencies": {
     "brfs": "^1.4.0",
     "element-class": "^0.2.0",
-    "exdat": "0.6.0",
+    "exdat": "0.6.1",
     "glslify": "^2.1.1",
     "insert-css": "^0.2.0",
     "ngraph.events": "0.0.3",
