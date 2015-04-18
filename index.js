@@ -210,7 +210,9 @@ function pixel(graph, options) {
     input = createInput(camera, graph, renderer.domElement);
     input.on('move', stopAutoFit);
     input.onKey(options.layoutToggleKey, toggleLayout);
-    input.on('nodehover', setTooltip);
+    input.on('nodeover', setTooltip);
+    input.on('nodeclick', passthrough('nodeclick'));
+    input.on('nodedblclick', passthrough('nodedblclick'));
 
     window.addEventListener('resize', onWindowResize, false);
   }
@@ -242,12 +244,24 @@ function pixel(graph, options) {
   }
 
   function setTooltip(e) {
-    if (e.nodeIndex !== undefined) {
-      var node = graph.getNode(nodeIdxToId[e.nodeIndex]);
+    var node = getNodeByIndex(e.nodeIndex);
+    if (node) {
       tooltipView.show(e, node);
     } else {
       tooltipView.hide(e);
     }
+    api.fire('nodehover', node);
+  }
+
+  function passthrough(name) {
+    return function (e) {
+      var node = getNodeByIndex(e.nodeIndex);
+      if (node) api.fire(name, node);
+    };
+  }
+
+  function getNodeByIndex(nodeIndex) {
+    return nodeIndex && graph.getNode(nodeIdxToId[nodeIndex]);
   }
 
   function toggleLayout() {
@@ -344,4 +358,5 @@ function pixel(graph, options) {
   function settings() {
     return settingsView;
   }
+
 }
