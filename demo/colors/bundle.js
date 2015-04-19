@@ -201,6 +201,13 @@ function pixel(graph, options) {
   function init() {
     initScene();
     initPositions();
+    listenToGraph();
+  }
+
+  function listenToGraph() {
+    // TODO: this is not efficient at all. We are recriating view from scratch on
+    // every single change.
+    graph.on('changed', initPositions);
   }
 
   function initPositions() {

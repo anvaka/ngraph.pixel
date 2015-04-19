@@ -1,83 +1,38 @@
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
-var query = require('query-string').parse(window.location.search.substring(1));
-var graph = getGraphFromQueryString(query);
+var generate = require('ngraph.generators');
+var createLegend = require('edgelegend');
+
+var graph = generate.grid(10, 10);
 var renderGraph = require('../../');
-var addCurrentNodeSettings = require('./nodeSettings.js');
 
 var renderer = renderGraph(graph, {
   settings: true // request to render settings user interface
 });
 
-var allSettings = renderer.settings();
-var gui = allSettings.gui();
-var nodeSettings = addCurrentNodeSettings(gui, renderer);
+// we do not need to show these options in the current demo:
+renderer.settings().remove(['View Settings', 'Layout Settings']);
 
-renderer.on('nodeclick', showNodeDetails);
 
-function showNodeDetails(node) {
-  nodeSettings.id = node.id;
-  nodeSettings.color = renderer.nodeColor(node.id);
-  nodeSettings.size = renderer.nodeSize(node.id);
-  nodeSettings.isPinned = renderer.layout().isNodePinned(node);
-  gui.update();
-}
-
-function getGraphFromQueryString(query) {
-  var graphGenerators = require('ngraph.generators');
-  var createGraph = graphGenerators[query.graph] || graphGenerators.grid;
-  return createGraph(getNumber(query.n), getNumber(query.m), getNumber(query.k));
-}
-
-function getNumber(string, defaultValue) {
-  var number = parseFloat(string);
-  return (typeof number === 'number') && !isNaN(number) ? number : (defaultValue || 10);
-}
-
-},{"../../":3,"./nodeSettings.js":2,"ngraph.generators":69,"query-string":72}],2:[function(require,module,exports){
-module.exports = createNodeSettings;
-
-function createNodeSettings(gui, renderer) {
-  var nodeSettings = gui.addFolder('Current Node');
-  var currentNode = {
-    id: '',
-    color: 0,
-    size: 0,
-    isPinned: false
-  };
-
-  nodeSettings.add(currentNode, 'id');
-  nodeSettings.addColor(currentNode, 'color').onChange(setColor);
-  nodeSettings.add(currentNode, 'size', 0, 200).onChange(setSize);
-  nodeSettings.add(currentNode, 'isPinned').onChange(setPinned);
-
-  return currentNode;
-
-  function setColor() {
-    if (currentNode.id) {
-      renderer.nodeColor(currentNode.id, currentNode.color);
-      renderer.focus();
-    }
+createLegend(renderer, 'Groups', [{
+  name: 'First',
+  color: 0xff0000,
+  filter: function (link) { return link.fromId <= 33; }
+}, {
+  name: 'Second',
+  color: 0x00ff00,
+  filter: function(link) {
+    return 33 < link.fromId && link.fromId <= 66;
   }
-
-  function setSize() {
-    if (currentNode.id) {
-      renderer.nodeSize(currentNode.id, currentNode.size);
-      renderer.focus();
-    }
-  }
-
-  function setPinned() {
-    if (!currentNode.id) return;
-
-    var graph = renderer.graph();
-    var layout = renderer.layout();
-    var node = graph.getNode(currentNode.id);
-    layout.pinNode(node, currentNode.isPinned);
-    renderer.focus();
+},{
+  name: 'Third',
+  color: 0x0000ff,
+  filter: function(link) {
+    return 66 < link.fromId;
   }
 }
+]);
 
-},{}],3:[function(require,module,exports){
+},{"../../":2,"edgelegend":17,"ngraph.generators":69}],2:[function(require,module,exports){
 module.exports = pixel;
 var THREE = require('three');
 var eventify = require('ngraph.events');
@@ -460,7 +415,7 @@ function pixel(graph, options) {
   }
 }
 
-},{"./lib/autoFit.js":4,"./lib/edgeView.js":7,"./lib/flyTo.js":8,"./lib/input.js":10,"./lib/nodeView.js":13,"./lib/settings/index.js":14,"./lib/tooltip.js":17,"./options.js":77,"ngraph.events":42,"ngraph.forcelayout3d":43,"three":76}],4:[function(require,module,exports){
+},{"./lib/autoFit.js":3,"./lib/edgeView.js":6,"./lib/flyTo.js":7,"./lib/input.js":9,"./lib/nodeView.js":12,"./lib/settings/index.js":13,"./lib/tooltip.js":16,"./options.js":76,"ngraph.events":42,"ngraph.forcelayout3d":43,"three":75}],3:[function(require,module,exports){
 var flyTo = require('./flyTo.js');
 module.exports = createAutoFit;
 
@@ -476,7 +431,7 @@ function createAutoFit(nodeView, camera) {
   }
 }
 
-},{"./flyTo.js":8}],5:[function(require,module,exports){
+},{"./flyTo.js":7}],4:[function(require,module,exports){
 var THREE = require('three');
 
 
@@ -520,10 +475,10 @@ function createParticleMaterial() {
   });
 }
 
-},{"./defaultTexture.js":6,"three":76}],6:[function(require,module,exports){
+},{"./defaultTexture.js":5,"three":75}],5:[function(require,module,exports){
 module.exports = 'data:image/png;base64,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';
 
-},{}],7:[function(require,module,exports){
+},{}],6:[function(require,module,exports){
 var THREE = require('three');
 
 module.exports = edgeView;
@@ -618,7 +573,7 @@ function edgeView(scene) {
   }
 }
 
-},{"three":76}],8:[function(require,module,exports){
+},{"three":75}],7:[function(require,module,exports){
 /**
  * Moves camera to given point, and stops it and given radius
  */
@@ -643,7 +598,7 @@ function flyTo(camera, to, radius) {
   camera.position.z = cameraEndPos.z;
 }
 
-},{"./intersect.js":11,"three":76}],9:[function(require,module,exports){
+},{"./intersect.js":10,"three":75}],8:[function(require,module,exports){
 /**
  * Gives an index of a node under mouse coordinates
  */
@@ -896,7 +851,7 @@ function createHitTest(domElement) {
   }
 }
 
-},{"ngraph.events":42,"three":76}],10:[function(require,module,exports){
+},{"ngraph.events":42,"three":75}],9:[function(require,module,exports){
 var FlyControls = require('three.fly');
 var eventify = require('ngraph.events');
 var THREE = require('three');
@@ -971,7 +926,7 @@ function createInput(camera, graph, domElement) {
   }
 }
 
-},{"./hitTest.js":9,"ngraph.events":42,"three":76,"three.fly":73}],11:[function(require,module,exports){
+},{"./hitTest.js":8,"ngraph.events":42,"three":75,"three.fly":72}],10:[function(require,module,exports){
 module.exports = intersect;
 
 /**
@@ -997,7 +952,7 @@ function intersect(from, to, r) {
   };
 }
 
-},{}],12:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 /**
  * A starting point to avoid keycodes hardcoding
  */
@@ -1006,7 +961,7 @@ module.exports = {
   L: 76
 };
 
-},{}],13:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 var THREE = require('three');
 var particleMaterial = require('./createMaterial.js')();
 
@@ -1115,7 +1070,7 @@ function nodeView(scene) {
   }
 }
 
-},{"./createMaterial.js":5,"three":76}],14:[function(require,module,exports){
+},{"./createMaterial.js":4,"three":75}],13:[function(require,module,exports){
 var dat = require('exdat');
 var addGlobalViewSettings = require('./view.js');
 var addLayoutSettings = require('./layout.js');
@@ -1235,7 +1190,7 @@ function createSettingsView(settingsAreVisible, renderer) {
   }
 }
 
-},{"./layout.js":15,"./view.js":16,"exdat":40}],15:[function(require,module,exports){
+},{"./layout.js":14,"./view.js":15,"exdat":40}],14:[function(require,module,exports){
 /**
  * Controls physics engine settings (like spring length, drag coefficient, etc.
  */
@@ -1277,7 +1232,7 @@ function addLayoutSettings(renderer, gui) {
   }
 }
 
-},{}],16:[function(require,module,exports){
+},{}],15:[function(require,module,exports){
 /**
  * Controls available settings for the gobal view settings (like node colors,
  * size, 3d/2d, etc.)
@@ -1361,7 +1316,7 @@ function addGlobalViewSettings(renderer, gui) {
   }
 }
 
-},{}],17:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 /**
  * manages view for tooltips shown when user hover over a node
  */
@@ -1406,7 +1361,118 @@ function createTooltipView(container) {
   }
 }
 
-},{"element-class":18,"insert-css":41}],18:[function(require,module,exports){
+},{"element-class":18,"insert-css":41}],17:[function(require,module,exports){
+module.exports = createLegend;
+
+function createLegend(renderer, folderName, legend) {
+  var allSettings = renderer.settings();
+  var gui = allSettings.gui();
+  var group = gui.addFolder(folderName);
+  var model = Object.create(null);
+  var hiddenLinks = Object.create(null);
+
+  for (var i = 0; i < legend.length; ++i) {
+    var item = legend[i];
+    model[item.name] = item.color;
+    hiddenLinks[item.name] = [];
+    group.addColor(model, item.name)
+      .onChange(colorLinks)
+      .name(toggle(item.name));
+  }
+
+  group.open();
+
+  listToToggleEvents();
+  colorLinks();
+
+  function listToToggleEvents() {
+    var checkboxes = group.domElement.querySelectorAll('input.toggle');
+
+    for (var i = 0; i < checkboxes.length; ++i) {
+      checkboxes[i].addEventListener('change', handleChange, false);
+    }
+
+    function handleChange(e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (this.checked) {
+        showGroup(this.id);
+      } else {
+        hideGroup(this.id);
+      }
+    }
+  }
+
+  function colorLinks() {
+    var graph = renderer.graph();
+    graph.forEachLink(colorLink);
+    renderer.focus();
+
+    function colorLink(link) {
+      for (var i = 0; i < legend.length; ++i) {
+        var item = legend[i];
+        if (!item.filter(link)) continue;
+        renderer.linkColor(link.id, model[item.name]);
+      }
+    }
+  }
+
+  function showGroup(groupName) {
+    var links = hiddenLinks[groupName];
+    if (!links) return;
+
+    var graph = renderer.graph();
+    graph.beginUpdate();
+    for (var i = 0; i < links.length; ++i) {
+      var link = links[i];
+      graph.addLink(link.fromId, link.toId);
+    }
+    graph.endUpdate();
+
+    links.splice(0, links.length);
+    colorLinks();
+  }
+
+  function hideGroup(groupName) {
+    var links = hiddenLinks[groupName];
+    if (!links) return;
+    var legendItem = getLegendItemByName(groupName);
+    if (!legendItem) return;
+
+    var graph = renderer.graph();
+    graph.forEachLink(noteLinksToRemove);
+
+    graph.beginUpdate();
+    for (var i = 0; i < links.length; ++i) {
+      graph.removeLink(links[i]);
+    }
+    graph.endUpdate();
+
+    colorLinks();
+
+    function noteLinksToRemove(link) {
+      if (legendItem.filter(link)) links.push(link);
+    }
+  }
+
+  function getLegendItemByName(name) {
+    for (var i = 0; i < legend.length; ++i) {
+      if (legend[i].name === name) return legend[i];
+    }
+  }
+
+  function toggle(name) {
+    return [
+      '<span>',
+      '<input type="checkbox" name="checkbox" id="' + name + '" class="toggle" value="value" checked>',
+      '<label for="' + name + '">' + name + '</label>',
+      '</span>'
+    ].join('\n');
+  }
+}
+
+},{}],18:[function(require,module,exports){
 module.exports = function(opts) {
   return new ElementClass(opts)
 }
@@ -8629,74 +8695,6 @@ function Link(fromId, toId, data, id) {
 },{"ngraph.events":42}],71:[function(require,module,exports){
 arguments[4][68][0].apply(exports,arguments)
 },{"dup":68}],72:[function(require,module,exports){
-/*!
-	query-string
-	Parse and stringify URL query strings
-	https://github.com/sindresorhus/query-string
-	by Sindre Sorhus
-	MIT License
-*/
-(function () {
-	'use strict';
-	var queryString = {};
-
-	queryString.parse = function (str) {
-		if (typeof str !== 'string') {
-			return {};
-		}
-
-		str = str.trim().replace(/^(\?|#)/, '');
-
-		if (!str) {
-			return {};
-		}
-
-		return str.trim().split('&').reduce(function (ret, param) {
-			var parts = param.replace(/\+/g, ' ').split('=');
-			var key = parts[0];
-			var val = parts[1];
-
-			key = decodeURIComponent(key);
-			// missing `=` should be `null`:
-			// http://w3.org/TR/2012/WD-url-20120524/#collect-url-parameters
-			val = val === undefined ? null : decodeURIComponent(val);
-
-			if (!ret.hasOwnProperty(key)) {
-				ret[key] = val;
-			} else if (Array.isArray(ret[key])) {
-				ret[key].push(val);
-			} else {
-				ret[key] = [ret[key], val];
-			}
-
-			return ret;
-		}, {});
-	};
-
-	queryString.stringify = function (obj) {
-		return obj ? Object.keys(obj).map(function (key) {
-			var val = obj[key];
-
-			if (Array.isArray(val)) {
-				return val.map(function (val2) {
-					return encodeURIComponent(key) + '=' + encodeURIComponent(val2);
-				}).join('&');
-			}
-
-			return encodeURIComponent(key) + '=' + encodeURIComponent(val);
-		}).join('&') : '';
-	};
-
-	if (typeof define === 'function' && define.amd) {
-		define(function() { return queryString; });
-	} else if (typeof module !== 'undefined' && module.exports) {
-		module.exports = queryString;
-	} else {
-		window.queryString = queryString;
-	}
-})();
-
-},{}],73:[function(require,module,exports){
 /**
  * @author James Baicoianu / http://www.baicoianu.com/
  * Source: https://github.com/mrdoob/three.js/blob/master/examples/js/controls/FlyControls.js
@@ -8927,7 +8925,7 @@ function fly(camera, domElement, THREE) {
   }
 }
 
-},{"./keymap.js":74,"ngraph.events":75}],74:[function(require,module,exports){
+},{"./keymap.js":73,"ngraph.events":74}],73:[function(require,module,exports){
 /**
  * Defines default key bindings for the controls
  */
@@ -8950,9 +8948,9 @@ function createKeyMap() {
   };
 }
 
-},{}],75:[function(require,module,exports){
+},{}],74:[function(require,module,exports){
 arguments[4][42][0].apply(exports,arguments)
-},{"dup":42}],76:[function(require,module,exports){
+},{"dup":42}],75:[function(require,module,exports){
 // File:src/Three.js
 
 /**
@@ -43498,7 +43496,7 @@ THREE.MorphBlendMesh.prototype.update = function ( delta ) {
 
 };
 
-},{}],77:[function(require,module,exports){
+},{}],76:[function(require,module,exports){
 /**
  * This file contains all possible configuration optins for the renderer
  */
@@ -43553,4 +43551,4 @@ function validateOptions(options) {
   return options;
 }
 
-},{"./lib/keyCode.js":12}]},{},[1]);
+},{"./lib/keyCode.js":11}]},{},[1]);

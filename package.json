@@ -8,7 +8,8 @@
     "basic": "browserify demo/basic/index.js > demo/basic/bundle.js",
     "colors": "browserify demo/colors/index.js > demo/colors/bundle.js",
     "config": "browserify demo/config/index.js > demo/config/bundle.js",
-    "start": "npm run basic && npm run colors && npm run config"
+    "edit": "browserify demo/edit/index.js > demo/edit/bundle.js",
+    "start": "npm run basic && npm run colors && npm run config && npm run edit"
   },
   "keywords": [
     "graph",
@@ -45,6 +46,7 @@
   "devDependencies": {
     "browserify": "^9.0.8",
     "ngraph.generators": "0.0.15",
-    "query-string": "^1.0.0"
+    "query-string": "^1.0.0",
+    "edgelegend": "0.1.0"
   }
 }
