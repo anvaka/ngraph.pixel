@@ -203,6 +203,8 @@ function pixel(graph, options) {
     nodeView.initPositions(nodePositions);
     edgeView.initPositions(edgePositions);
 
+    if (input) input.reset();
+
     function addNodePosition(node) {
       var position = layout.getNodePosition(node.id);
       if (!is3d) position.z = 0;
@@ -311,7 +313,6 @@ function pixel(graph, options) {
     Object.keys(nodeIdToIdx).forEach(initLayout);
 
     initPositions();
-    input.reset();
     stable(false);
     api.fire('modeChanged', is3d);
 

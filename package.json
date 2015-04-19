@@ -47,6 +47,6 @@
     "browserify": "^9.0.8",
     "ngraph.generators": "0.0.15",
     "query-string": "^1.0.0",
-    "edgelegend": "0.1.0"
+    "edgelegend": "0.1.2"
   }
 }

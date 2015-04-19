@@ -219,6 +219,8 @@ function pixel(graph, options) {
     nodeView.initPositions(nodePositions);
     edgeView.initPositions(edgePositions);
 
+    if (input) input.reset();
+
     function addNodePosition(node) {
       var position = layout.getNodePosition(node.id);
       if (!is3d) position.z = 0;
@@ -327,7 +329,6 @@ function pixel(graph, options) {
     Object.keys(nodeIdToIdx).forEach(initLayout);
 
     initPositions();
-    input.reset();
     stable(false);
     api.fire('modeChanged', is3d);
 
@@ -1426,7 +1427,7 @@ function createLegend(renderer, folderName, legend) {
     graph.beginUpdate();
     for (var i = 0; i < links.length; ++i) {
       var link = links[i];
-      graph.addLink(link.fromId, link.toId);
+      graph.addLink(link.fromId, link.toId, link.data);
     }
     graph.endUpdate();
 
@@ -1464,7 +1465,7 @@ function createLegend(renderer, folderName, legend) {
 
   function toggle(name) {
     return [
-      '<span>',
+      '<span style="-webkit-touch-callout: none; -webkit-user-select: none; -khtml-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none;">',
       '<input type="checkbox" name="checkbox" id="' + name + '" class="toggle" value="value" checked>',
       '<label for="' + name + '">' + name + '</label>',
       '</span>'
