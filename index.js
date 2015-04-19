@@ -10,6 +10,7 @@ var createInput = require('./lib/input.js');
 var layout3d = require('ngraph.forcelayout3d');
 var layout2d = layout3d.get2dLayout;
 var validateOptions = require('./options.js');
+var flyTo = require('./lib/flyTo.js');
 
 function pixel(graph, options) {
   // This is our public API.
@@ -93,7 +94,14 @@ function pixel(graph, options) {
      * Gets settings view controller which allows user to show/hide customization
      * user interface
      */
-    settings: settings
+    settings: settings,
+
+    /**
+     * Requests renderer to move camera and focus on given node id.
+     *
+     * @param {string} nodeId identifier of the node to show
+     */
+    showNode: showNode
   };
 
   eventify(api);
@@ -359,4 +367,8 @@ function pixel(graph, options) {
     return settingsView;
   }
 
+  function showNode(nodeId, stopDistance) {
+    stopDistance = typeof stopDistance === 'number' ? stopDistance : 100;
+    flyTo(camera, layout.getNodePosition(nodeId), stopDistance);
+  }
 }

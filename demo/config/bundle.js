@@ -2,48 +2,25 @@
 var query = require('query-string').parse(window.location.search.substring(1));
 var graph = getGraphFromQueryString(query);
 var renderGraph = require('../../');
+var addCurrentNodeSettings = require('./nodeSettings.js');
 
 var renderer = renderGraph(graph, {
   settings: true // request to render settings user interface
 });
 
-renderer.on('nodeclick', showNodeDetails);
-
 var allSettings = renderer.settings();
 var gui = allSettings.gui();
-var nodeSettings = gui.addFolder('Current Node');
-var currentNode = {
-  id: '',
-  color: 0,
-  size: 0
-};
+var nodeSettings = addCurrentNodeSettings(gui, renderer);
 
-nodeSettings.add(currentNode, 'id');
-nodeSettings.addColor(currentNode, 'color').onChange(setColor);
-nodeSettings.add(currentNode, 'size', 0, 200).onChange(setSize);
-
-function setColor() {
-  if (currentNode.id) {
-    renderer.nodeColor(currentNode.id, currentNode.color);
-  }
-}
-
-function setSize() {
-  if (currentNode.id) {
-    renderer.nodeSize(currentNode.id, currentNode.size);
-  }
-}
+renderer.on('nodeclick', showNodeDetails);
 
 function showNodeDetails(node) {
-  currentNode.id = node.id;
-  currentNode.color = renderer.nodeColor(node.id);
-  currentNode.size = renderer.nodeSize(node.id);
-  nodeSettings.update();
+  nodeSettings.id = node.id;
+  nodeSettings.color = renderer.nodeColor(node.id);
+  nodeSettings.size = renderer.nodeSize(node.id);
+  nodeSettings.isPinned = renderer.layout().isNodePinned(node);
+  gui.update();
 }
-
-// you can list all available settings by calling: allSettings.list();
-// you can also remove individual settings that you don't want to show:
-// allSettings.remove(['View Settings', 'springCoeff']);
 
 function getGraphFromQueryString(query) {
   var graphGenerators = require('ngraph.generators');
@@ -56,7 +33,51 @@ function getNumber(string, defaultValue) {
   return (typeof number === 'number') && !isNaN(number) ? number : (defaultValue || 10);
 }
 
-},{"../../":2,"ngraph.generators":67,"query-string":70}],2:[function(require,module,exports){
+},{"../../":3,"./nodeSettings.js":2,"ngraph.generators":69,"query-string":72}],2:[function(require,module,exports){
+module.exports = createNodeSettings;
+
+function createNodeSettings(gui, renderer) {
+  var nodeSettings = gui.addFolder('Current Node');
+  var currentNode = {
+    id: '',
+    color: 0,
+    size: 0,
+    isPinned: false
+  };
+
+  nodeSettings.add(currentNode, 'id');
+  nodeSettings.addColor(currentNode, 'color').onChange(setColor);
+  nodeSettings.add(currentNode, 'size', 0, 200).onChange(setSize);
+  nodeSettings.add(currentNode, 'isPinned').onChange(setPinned);
+
+  return currentNode;
+
+  function setColor() {
+    if (currentNode.id) {
+      renderer.nodeColor(currentNode.id, currentNode.color);
+      renderer.focus();
+    }
+  }
+
+  function setSize() {
+    if (currentNode.id) {
+      renderer.nodeSize(currentNode.id, currentNode.size);
+      renderer.focus();
+    }
+  }
+
+  function setPinned() {
+    if (!currentNode.id) return;
+
+    var graph = renderer.graph();
+    var layout = renderer.layout();
+    var node = graph.getNode(currentNode.id);
+    layout.pinNode(node, currentNode.isPinned);
+    renderer.focus();
+  }
+}
+
+},{}],3:[function(require,module,exports){
 module.exports = pixel;
 var THREE = require('three');
 var eventify = require('ngraph.events');
@@ -69,6 +90,7 @@ var createInput = require('./lib/input.js');
 var layout3d = require('ngraph.forcelayout3d');
 var layout2d = layout3d.get2dLayout;
 var validateOptions = require('./options.js');
+var flyTo = require('./lib/flyTo.js');
 
 function pixel(graph, options) {
   // This is our public API.
@@ -152,7 +174,14 @@ function pixel(graph, options) {
      * Gets settings view controller which allows user to show/hide customization
      * user interface
      */
-    settings: settings
+    settings: settings,
+
+    /**
+     * Requests renderer to move camera and focus on given node id.
+     *
+     * @param {string} nodeId identifier of the node to show
+     */
+    showNode: showNode
   };
 
   eventify(api);
@@ -418,12 +447,14 @@ function pixel(graph, options) {
     return settingsView;
   }
 
+  function showNode(nodeId, stopDistance) {
+    stopDistance = typeof stopDistance === 'number' ? stopDistance : 100;
+    flyTo(camera, layout.getNodePosition(nodeId), stopDistance);
+  }
 }
 
-},{"./lib/autoFit.js":3,"./lib/edgeView.js":6,"./lib/input.js":8,"./lib/nodeView.js":11,"./lib/settings/index.js":12,"./lib/tooltip.js":15,"./options.js":75,"ngraph.events":40,"ngraph.forcelayout3d":41,"three":74}],3:[function(require,module,exports){
-var THREE = require('three');
-var intersect = require('./intersect.js');
-
+},{"./lib/autoFit.js":4,"./lib/edgeView.js":7,"./lib/flyTo.js":8,"./lib/input.js":10,"./lib/nodeView.js":13,"./lib/settings/index.js":14,"./lib/tooltip.js":17,"./options.js":77,"ngraph.events":42,"ngraph.forcelayout3d":43,"three":76}],4:[function(require,module,exports){
+var flyTo = require('./flyTo.js');
 module.exports = createAutoFit;
 
 function createAutoFit(nodeView, camera) {
@@ -433,24 +464,12 @@ function createAutoFit(nodeView, camera) {
 
   function update() {
     var sphere = nodeView.getBoundingSphere();
-    var cameraOffset = Math.max(sphere.radius, 100) / Math.tan(Math.PI / 180.0 * camera.fov * 0.5);
-    var to = sphere.center;
-
-    var from = {
-      x: camera.position.x,
-      y: camera.position.y,
-      z: camera.position.z,
-    };
-
-    camera.lookAt(new THREE.Vector3(to.x, to.y, to.z));
-    var cameraEndPos = intersect(from, to, cameraOffset);
-    camera.position.x = cameraEndPos.x;
-    camera.position.y = cameraEndPos.y;
-    camera.position.z = cameraEndPos.z;
+    var radius = Math.max(sphere.radius, 100);
+    flyTo(camera, sphere.center, radius);
   }
 }
 
-},{"./intersect.js":9,"three":74}],4:[function(require,module,exports){
+},{"./flyTo.js":8}],5:[function(require,module,exports){
 var THREE = require('three');
 
 
@@ -494,10 +513,10 @@ function createParticleMaterial() {
   });
 }
 
-},{"./defaultTexture.js":5,"three":74}],5:[function(require,module,exports){
+},{"./defaultTexture.js":6,"three":76}],6:[function(require,module,exports){
 module.exports = 'data:image/png;base64,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';
 
-},{}],6:[function(require,module,exports){
+},{}],7:[function(require,module,exports){
 var THREE = require('three');
 
 module.exports = edgeView;
@@ -592,7 +611,32 @@ function edgeView(scene) {
   }
 }
 
-},{"three":74}],7:[function(require,module,exports){
+},{"three":76}],8:[function(require,module,exports){
+/**
+ * Moves camera to given point, and stops it and given radius
+ */
+var THREE = require('three');
+var intersect = require('./intersect.js');
+
+module.exports = flyTo;
+
+function flyTo(camera, to, radius) {
+  var cameraOffset = radius / Math.tan(Math.PI / 180.0 * camera.fov * 0.5);
+
+  var from = {
+    x: camera.position.x,
+    y: camera.position.y,
+    z: camera.position.z,
+  };
+
+  camera.lookAt(new THREE.Vector3(to.x, to.y, to.z));
+  var cameraEndPos = intersect(from, to, cameraOffset);
+  camera.position.x = cameraEndPos.x;
+  camera.position.y = cameraEndPos.y;
+  camera.position.z = cameraEndPos.z;
+}
+
+},{"./intersect.js":11,"three":76}],9:[function(require,module,exports){
 /**
  * Gives an index of a node under mouse coordinates
  */
@@ -845,7 +889,7 @@ function createHitTest(domElement) {
   }
 }
 
-},{"ngraph.events":40,"three":74}],8:[function(require,module,exports){
+},{"ngraph.events":42,"three":76}],10:[function(require,module,exports){
 var FlyControls = require('three.fly');
 var eventify = require('ngraph.events');
 var THREE = require('three');
@@ -920,7 +964,7 @@ function createInput(camera, graph, domElement) {
   }
 }
 
-},{"./hitTest.js":7,"ngraph.events":40,"three":74,"three.fly":71}],9:[function(require,module,exports){
+},{"./hitTest.js":9,"ngraph.events":42,"three":76,"three.fly":73}],11:[function(require,module,exports){
 module.exports = intersect;
 
 /**
@@ -946,7 +990,7 @@ function intersect(from, to, r) {
   };
 }
 
-},{}],10:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 /**
  * A starting point to avoid keycodes hardcoding
  */
@@ -955,7 +999,7 @@ module.exports = {
   L: 76
 };
 
-},{}],11:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
 var THREE = require('three');
 var particleMaterial = require('./createMaterial.js')();
 
@@ -1064,7 +1108,7 @@ function nodeView(scene) {
   }
 }
 
-},{"./createMaterial.js":4,"three":74}],12:[function(require,module,exports){
+},{"./createMaterial.js":5,"three":76}],14:[function(require,module,exports){
 var dat = require('exdat');
 var addGlobalViewSettings = require('./view.js');
 var addLayoutSettings = require('./layout.js');
@@ -1184,7 +1228,7 @@ function createSettingsView(settingsAreVisible, renderer) {
   }
 }
 
-},{"./layout.js":13,"./view.js":14,"exdat":38}],13:[function(require,module,exports){
+},{"./layout.js":15,"./view.js":16,"exdat":40}],15:[function(require,module,exports){
 /**
  * Controls physics engine settings (like spring length, drag coefficient, etc.
  */
@@ -1226,7 +1270,7 @@ function addLayoutSettings(renderer, gui) {
   }
 }
 
-},{}],14:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 /**
  * Controls available settings for the gobal view settings (like node colors,
  * size, 3d/2d, etc.)
@@ -1310,7 +1354,7 @@ function addGlobalViewSettings(renderer, gui) {
   }
 }
 
-},{}],15:[function(require,module,exports){
+},{}],17:[function(require,module,exports){
 /**
  * manages view for tooltips shown when user hover over a node
  */
@@ -1355,7 +1399,7 @@ function createTooltipView(container) {
   }
 }
 
-},{"element-class":16,"insert-css":39}],16:[function(require,module,exports){
+},{"element-class":18,"insert-css":41}],18:[function(require,module,exports){
 module.exports = function(opts) {
   return new ElementClass(opts)
 }
@@ -1409,7 +1453,7 @@ ElementClass.prototype.has = function(className) {
   return indexOf(classes, className) > -1
 }
 
-},{}],17:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 /**
  * dat-gui JavaScript Controller Library
  * http://code.google.com/p/dat-gui
@@ -1592,7 +1636,7 @@ function recalculateHSV(color) {
 
 }
 
-},{"../utils/common.js":34,"./interpret.js":18,"./math.js":19,"./toString.js":20}],18:[function(require,module,exports){
+},{"../utils/common.js":36,"./interpret.js":20,"./math.js":21,"./toString.js":22}],20:[function(require,module,exports){
 /**
  * dat-gui JavaScript Controller Library
  * http://code.google.com/p/dat-gui
@@ -1935,7 +1979,7 @@ function createInterpert() {
 
 }
 
-},{"../utils/common.js":34,"./toString.js":20}],19:[function(require,module,exports){
+},{"../utils/common.js":36,"./toString.js":22}],21:[function(require,module,exports){
 /**
  * dat-gui JavaScript Controller Library
  * http://code.google.com/p/dat-gui
@@ -2036,7 +2080,7 @@ function math() {
   };
 }
 
-},{}],20:[function(require,module,exports){
+},{}],22:[function(require,module,exports){
 /**
  * dat-gui JavaScript Controller Library
  * http://code.google.com/p/dat-gui
@@ -2073,7 +2117,7 @@ function toString(color) {
 
 }
 
-},{"../utils/common.js":34}],21:[function(require,module,exports){
+},{"../utils/common.js":36}],23:[function(require,module,exports){
 /**
  * dat-gui JavaScript Controller Library
  * http://code.google.com/p/dat-gui
@@ -2157,7 +2201,7 @@ common.extend(
   }
 );
 
-},{"../dom/dom.js":32,"../utils/common.js":34,"./Controller.js":23}],22:[function(require,module,exports){
+},{"../dom/dom.js":34,"../utils/common.js":36,"./Controller.js":25}],24:[function(require,module,exports){
 /**
  * dat-gui JavaScript Controller Library
  * http://code.google.com/p/dat-gui
@@ -2478,7 +2522,7 @@ function hueGradient(elem) {
   elem.style.cssText += 'background: linear-gradient(top,  #ff0000 0%,#ff00ff 17%,#0000ff 34%,#00ffff 50%,#00ff00 67%,#ffff00 84%,#ff0000 100%);'
 }
 
-},{"../color/Color.js":17,"../color/interpret.js":18,"../dom/dom.js":32,"../utils/common.js":34,"./Controller.js":23}],23:[function(require,module,exports){
+},{"../color/Color.js":19,"../color/interpret.js":20,"../dom/dom.js":34,"../utils/common.js":36,"./Controller.js":25}],25:[function(require,module,exports){
 /**
  * dat-gui JavaScript Controller Library
  * http://code.google.com/p/dat-gui
@@ -2619,7 +2663,7 @@ common.extend(
 );
 
 
-},{"../utils/common.js":34,"../utils/escapeHtml.js":36}],24:[function(require,module,exports){
+},{"../utils/common.js":36,"../utils/escapeHtml.js":38}],26:[function(require,module,exports){
 /**
  * dat-gui JavaScript Controller Library
  * http://code.google.com/p/dat-gui
@@ -2689,7 +2733,7 @@ common.extend(
 
 );
 
-},{"../dom/dom.js":32,"../utils/common.js":34,"./Controller.js":23}],25:[function(require,module,exports){
+},{"../dom/dom.js":34,"../utils/common.js":36,"./Controller.js":25}],27:[function(require,module,exports){
 /**
  * dat-gui JavaScript Controller Library
  * http://code.google.com/p/dat-gui
@@ -2831,7 +2875,7 @@ function numDecimals(x) {
   }
 }
 
-},{"../utils/common.js":34,"./Controller.js":23}],26:[function(require,module,exports){
+},{"../utils/common.js":36,"./Controller.js":25}],28:[function(require,module,exports){
 /**
  * dat-gui JavaScript Controller Library
  * http://code.google.com/p/dat-gui
@@ -2962,7 +3006,7 @@ function roundToDecimal(value, decimals) {
   return Math.round(value * tenTo) / tenTo;
 }
 
-},{"../dom/dom.js":32,"../utils/common.js":34,"./NumberController.js":25}],27:[function(require,module,exports){
+},{"../dom/dom.js":34,"../utils/common.js":36,"./NumberController.js":27}],29:[function(require,module,exports){
 /**
  * dat-gui JavaScript Controller Library
  * http://code.google.com/p/dat-gui
@@ -3092,7 +3136,7 @@ function map(v, i1, i2, o1, o2) {
   return o1 + (o2 - o1) * ((v - i1) / (i2 - i1));
 }
 
-},{"../dom/dom.js":32,"../utils/common.js":34,"../utils/css.js":35,"./NumberController.js":25}],28:[function(require,module,exports){
+},{"../dom/dom.js":34,"../utils/common.js":36,"../utils/css.js":37,"./NumberController.js":27}],30:[function(require,module,exports){
 /**
  * dat-gui JavaScript Controller Library
  * http://code.google.com/p/dat-gui
@@ -3192,7 +3236,7 @@ common.extend(
 
 );
 
-},{"../dom/dom.js":32,"../utils/common.js":34,"./Controller.js":23}],29:[function(require,module,exports){
+},{"../dom/dom.js":34,"../utils/common.js":36,"./Controller.js":25}],31:[function(require,module,exports){
 /**
  * dat-gui JavaScript Controller Library
  * http://code.google.com/p/dat-gui
@@ -3279,7 +3323,7 @@ common.extend(
 
 );
 
-},{"../dom/dom.js":32,"../utils/common.js":34,"./Controller.js":23}],30:[function(require,module,exports){
+},{"../dom/dom.js":34,"../utils/common.js":36,"./Controller.js":25}],32:[function(require,module,exports){
 /**
  * dat-gui JavaScript Controller Library
  * http://code.google.com/p/dat-gui
@@ -3345,7 +3389,7 @@ function factory(object, property) {
 
 }
 
-},{"../utils/common.js":34,"./BooleanController.js":21,"./FunctionController.js":24,"./NumberControllerBox.js":26,"./NumberControllerSlider.js":27,"./OptionController.js":28,"./StringController.js":29}],31:[function(require,module,exports){
+},{"../utils/common.js":36,"./BooleanController.js":23,"./FunctionController.js":26,"./NumberControllerBox.js":28,"./NumberControllerSlider.js":29,"./OptionController.js":30,"./StringController.js":31}],33:[function(require,module,exports){
 /**
  * dat-gui JavaScript Controller Library
  * http://code.google.com/p/dat-gui
@@ -3459,7 +3503,7 @@ function lockScroll(e) {
   console.log(e);
 }
 
-},{"../utils/common.js":34,"./dom.js":32}],32:[function(require,module,exports){
+},{"../utils/common.js":36,"./dom.js":34}],34:[function(require,module,exports){
 /**
  * dat-gui JavaScript Controller Library
  * http://code.google.com/p/dat-gui
@@ -3746,7 +3790,7 @@ var dom = {
 
 module.exports = dom;
 
-},{"../utils/common.js":34}],33:[function(require,module,exports){
+},{"../utils/common.js":36}],35:[function(require,module,exports){
 /**
  * dat-gui JavaScript Controller Library
  * http://code.google.com/p/dat-gui
@@ -5148,7 +5192,7 @@ function createGUI() {
   return GUI;
 }
 
-},{"../controllers/BooleanController.js":21,"../controllers/ColorController.js":22,"../controllers/Controller.js":23,"../controllers/FunctionController.js":24,"../controllers/NumberControllerBox.js":26,"../controllers/NumberControllerSlider.js":27,"../controllers/factory.js":30,"../dom/CenteredDiv.js":31,"../dom/dom.js":32,"../utils/common.js":34,"../utils/css.js":35,"../utils/requestAnimationFrame.js":37}],34:[function(require,module,exports){
+},{"../controllers/BooleanController.js":23,"../controllers/ColorController.js":24,"../controllers/Controller.js":25,"../controllers/FunctionController.js":26,"../controllers/NumberControllerBox.js":28,"../controllers/NumberControllerSlider.js":29,"../controllers/factory.js":32,"../dom/CenteredDiv.js":33,"../dom/dom.js":34,"../utils/common.js":36,"../utils/css.js":37,"../utils/requestAnimationFrame.js":39}],36:[function(require,module,exports){
 /**
  * dat-gui JavaScript Controller Library
  * http://code.google.com/p/dat-gui
@@ -5290,7 +5334,7 @@ function common() {
   };
 }
 
-},{}],35:[function(require,module,exports){
+},{}],37:[function(require,module,exports){
 /**
  * dat-gui JavaScript Controller Library
  * http://code.google.com/p/dat-gui
@@ -5325,7 +5369,7 @@ function css() {
   };
 }
 
-},{}],36:[function(require,module,exports){
+},{}],38:[function(require,module,exports){
 module.exports = escape;
 
 var entityMap = {
@@ -5343,7 +5387,7 @@ function escape(string) {
   });
 }
 
-},{}],37:[function(require,module,exports){
+},{}],39:[function(require,module,exports){
 /**
  * dat-gui JavaScript Controller Library
  * http://code.google.com/p/dat-gui
@@ -5376,7 +5420,7 @@ function raf() {
       };
 }
 
-},{}],38:[function(require,module,exports){
+},{}],40:[function(require,module,exports){
 /** @license
  * dat-gui JavaScript Controller Library
  * http://code.google.com/p/dat-gui
@@ -5416,7 +5460,7 @@ module.exports = {
   GUI: require('./dat/gui/GUI.js')
 };
 
-},{"./dat/color/Color.js":17,"./dat/color/interpret.js":18,"./dat/color/math.js":19,"./dat/controllers/BooleanController.js":21,"./dat/controllers/ColorController.js":22,"./dat/controllers/Controller.js":23,"./dat/controllers/FunctionController.js":24,"./dat/controllers/NumberController.js":25,"./dat/controllers/NumberControllerBox.js":26,"./dat/controllers/NumberControllerSlider.js":27,"./dat/controllers/OptionController.js":28,"./dat/controllers/StringController.js":29,"./dat/dom/dom.js":32,"./dat/gui/GUI.js":33}],39:[function(require,module,exports){
+},{"./dat/color/Color.js":19,"./dat/color/interpret.js":20,"./dat/color/math.js":21,"./dat/controllers/BooleanController.js":23,"./dat/controllers/ColorController.js":24,"./dat/controllers/Controller.js":25,"./dat/controllers/FunctionController.js":26,"./dat/controllers/NumberController.js":27,"./dat/controllers/NumberControllerBox.js":28,"./dat/controllers/NumberControllerSlider.js":29,"./dat/controllers/OptionController.js":30,"./dat/controllers/StringController.js":31,"./dat/dom/dom.js":34,"./dat/gui/GUI.js":35}],41:[function(require,module,exports){
 var inserted = {};
 
 module.exports = function (css, options) {
@@ -5440,7 +5484,7 @@ module.exports = function (css, options) {
     }
 };
 
-},{}],40:[function(require,module,exports){
+},{}],42:[function(require,module,exports){
 module.exports = function(subject) {
   validateSubject(subject);
 
@@ -5530,7 +5574,7 @@ function validateSubject(subject) {
   }
 }
 
-},{}],41:[function(require,module,exports){
+},{}],43:[function(require,module,exports){
 /**
  * This module provides all required forces to regular ngraph.physics.simulator
  * to make it 3D simulator. Ideally ngraph.physics.simulator should operate
@@ -5554,7 +5598,7 @@ function createLayout(graph, physicsSettings) {
   return createLayout.get2dLayout(graph, physicsSettings);
 }
 
-},{"./lib/bounds":42,"./lib/createBody":43,"./lib/dragForce":44,"./lib/eulerIntegrator":45,"./lib/springForce":46,"ngraph.forcelayout":48,"ngraph.merge":60,"ngraph.quadtreebh3d":62}],42:[function(require,module,exports){
+},{"./lib/bounds":44,"./lib/createBody":45,"./lib/dragForce":46,"./lib/eulerIntegrator":47,"./lib/springForce":48,"ngraph.forcelayout":50,"ngraph.merge":62,"ngraph.quadtreebh3d":64}],44:[function(require,module,exports){
 module.exports = function (bodies, settings) {
   var random = require('ngraph.random').random(42);
   var boundingBox =  { x1: 0, y1: 0, z1: 0, x2: 0, y2: 0, z2: 0 };
@@ -5653,14 +5697,14 @@ module.exports = function (bodies, settings) {
   }
 };
 
-},{"ngraph.random":66}],43:[function(require,module,exports){
+},{"ngraph.random":68}],45:[function(require,module,exports){
 var physics = require('ngraph.physics.primitives');
 
 module.exports = function(pos) {
   return new physics.Body3d(pos);
 }
 
-},{"ngraph.physics.primitives":61}],44:[function(require,module,exports){
+},{"ngraph.physics.primitives":63}],46:[function(require,module,exports){
 /**
  * Represents 3d drag force, which reduces force value on each step by given
  * coefficient.
@@ -5690,7 +5734,7 @@ module.exports = function (options) {
   return api;
 };
 
-},{"ngraph.expose":47,"ngraph.merge":60}],45:[function(require,module,exports){
+},{"ngraph.expose":49,"ngraph.merge":62}],47:[function(require,module,exports){
 /**
  * Performs 3d forces integration, using given timestep. Uses Euler method to solve
  * differential equation (http://en.wikipedia.org/wiki/Euler_method ).
@@ -5740,7 +5784,7 @@ function integrate(bodies, timeStep) {
   return (tx * tx + ty * ty + tz * tz)/bodies.length;
 }
 
-},{}],46:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 /**
  * Represents 3d spring force, which updates forces acting on two bodies, conntected
  * by a spring.
@@ -5796,7 +5840,7 @@ module.exports = function (options) {
   return api;
 }
 
-},{"ngraph.expose":47,"ngraph.merge":60,"ngraph.random":66}],47:[function(require,module,exports){
+},{"ngraph.expose":49,"ngraph.merge":62,"ngraph.random":68}],49:[function(require,module,exports){
 module.exports = exposeProperties;
 
 /**
@@ -5842,7 +5886,7 @@ function augment(source, target, key) {
   }
 }
 
-},{}],48:[function(require,module,exports){
+},{}],50:[function(require,module,exports){
 module.exports = createLayout;
 module.exports.simulator = require('ngraph.physics.simulator');
 
@@ -6146,7 +6190,7 @@ function createLayout(graph, physicsSettings) {
 
 function noop() { }
 
-},{"ngraph.physics.simulator":49}],49:[function(require,module,exports){
+},{"ngraph.physics.simulator":51}],51:[function(require,module,exports){
 /**
  * Manages a simulation of physical forces acting on bodies and springs.
  */
@@ -6402,7 +6446,7 @@ function physicsSimulator(settings) {
   }
 };
 
-},{"./lib/bounds":50,"./lib/createBody":51,"./lib/dragForce":52,"./lib/eulerIntegrator":53,"./lib/spring":54,"./lib/springForce":55,"ngraph.expose":47,"ngraph.merge":60,"ngraph.quadtreebh":56}],50:[function(require,module,exports){
+},{"./lib/bounds":52,"./lib/createBody":53,"./lib/dragForce":54,"./lib/eulerIntegrator":55,"./lib/spring":56,"./lib/springForce":57,"ngraph.expose":49,"ngraph.merge":62,"ngraph.quadtreebh":58}],52:[function(require,module,exports){
 module.exports = function (bodies, settings) {
   var random = require('ngraph.random').random(42);
   var boundingBox =  { x1: 0, y1: 0, x2: 0, y2: 0 };
@@ -6484,14 +6528,14 @@ module.exports = function (bodies, settings) {
   }
 }
 
-},{"ngraph.random":66}],51:[function(require,module,exports){
+},{"ngraph.random":68}],53:[function(require,module,exports){
 var physics = require('ngraph.physics.primitives');
 
 module.exports = function(pos) {
   return new physics.Body(pos);
 }
 
-},{"ngraph.physics.primitives":61}],52:[function(require,module,exports){
+},{"ngraph.physics.primitives":63}],54:[function(require,module,exports){
 /**
  * Represents drag force, which reduces force value on each step by given
  * coefficient.
@@ -6520,7 +6564,7 @@ module.exports = function (options) {
   return api;
 };
 
-},{"ngraph.expose":47,"ngraph.merge":60}],53:[function(require,module,exports){
+},{"ngraph.expose":49,"ngraph.merge":62}],55:[function(require,module,exports){
 /**
  * Performs forces integration, using given timestep. Uses Euler method to solve
  * differential equation (http://en.wikipedia.org/wiki/Euler_method ).
@@ -6563,7 +6607,7 @@ function integrate(bodies, timeStep) {
   return (tx * tx + ty * ty)/bodies.length;
 }
 
-},{}],54:[function(require,module,exports){
+},{}],56:[function(require,module,exports){
 module.exports = Spring;
 
 /**
@@ -6579,7 +6623,7 @@ function Spring(fromBody, toBody, length, coeff, weight) {
     this.weight = typeof weight === 'number' ? weight : 1;
 };
 
-},{}],55:[function(require,module,exports){
+},{}],57:[function(require,module,exports){
 /**
  * Represents spring force, which updates forces acting on two bodies, conntected
  * by a spring.
@@ -6631,7 +6675,7 @@ module.exports = function (options) {
   return api;
 }
 
-},{"ngraph.expose":47,"ngraph.merge":60,"ngraph.random":66}],56:[function(require,module,exports){
+},{"ngraph.expose":49,"ngraph.merge":62,"ngraph.random":68}],58:[function(require,module,exports){
 /**
  * This is Barnes Hut simulation algorithm for 2d case. Implementation
  * is highly optimized (avoids recusion and gc pressure)
@@ -6957,7 +7001,7 @@ function setChild(node, idx, child) {
   else if (idx === 3) node.quad3 = child;
 }
 
-},{"./insertStack":57,"./isSamePosition":58,"./node":59,"ngraph.random":66}],57:[function(require,module,exports){
+},{"./insertStack":59,"./isSamePosition":60,"./node":61,"ngraph.random":68}],59:[function(require,module,exports){
 module.exports = InsertStack;
 
 /**
@@ -7001,7 +7045,7 @@ function InsertStackElement(node, body) {
     this.body = body; // physical body which needs to be inserted to node
 }
 
-},{}],58:[function(require,module,exports){
+},{}],60:[function(require,module,exports){
 module.exports = function isSamePosition(point1, point2) {
     var dx = Math.abs(point1.x - point2.x);
     var dy = Math.abs(point1.y - point2.y);
@@ -7009,7 +7053,7 @@ module.exports = function isSamePosition(point1, point2) {
     return (dx < 1e-8 && dy < 1e-8);
 };
 
-},{}],59:[function(require,module,exports){
+},{}],61:[function(require,module,exports){
 /**
  * Internal data structure to represent 2D QuadTree node
  */
@@ -7041,7 +7085,7 @@ module.exports = function Node() {
   this.right = 0;
 };
 
-},{}],60:[function(require,module,exports){
+},{}],62:[function(require,module,exports){
 module.exports = merge;
 
 /**
@@ -7074,7 +7118,7 @@ function merge(target, options) {
   return target;
 }
 
-},{}],61:[function(require,module,exports){
+},{}],63:[function(require,module,exports){
 module.exports = {
   Body: Body,
   Vector2d: Vector2d,
@@ -7141,7 +7185,7 @@ Vector3d.prototype.reset = function () {
   this.x = this.y = this.z = 0;
 };
 
-},{}],62:[function(require,module,exports){
+},{}],64:[function(require,module,exports){
 /**
  * This is Barnes Hut simulation algorithm for 3d case. Implementation
  * is highly optimized (avoids recusion and gc pressure)
@@ -7536,7 +7580,7 @@ function setChild(node, idx, child) {
   else if (idx === 7) node.quad7 = child;
 }
 
-},{"./insertStack":63,"./isSamePosition":64,"./node":65,"ngraph.random":66}],63:[function(require,module,exports){
+},{"./insertStack":65,"./isSamePosition":66,"./node":67,"ngraph.random":68}],65:[function(require,module,exports){
 module.exports = InsertStack;
 
 /**
@@ -7580,7 +7624,7 @@ function InsertStackElement(node, body) {
     this.body = body; // physical body which needs to be inserted to node
 }
 
-},{}],64:[function(require,module,exports){
+},{}],66:[function(require,module,exports){
 module.exports = function isSamePosition(point1, point2) {
     var dx = Math.abs(point1.x - point2.x);
     var dy = Math.abs(point1.y - point2.y);
@@ -7589,7 +7633,7 @@ module.exports = function isSamePosition(point1, point2) {
     return (dx < 1e-8 && dy < 1e-8 && dz < 1e-8);
 };
 
-},{}],65:[function(require,module,exports){
+},{}],67:[function(require,module,exports){
 /**
  * Internal data structure to represent 3D QuadTree node
  */
@@ -7633,7 +7677,7 @@ module.exports = function Node() {
   this.back = 0;
 };
 
-},{}],66:[function(require,module,exports){
+},{}],68:[function(require,module,exports){
 module.exports = {
   random: random,
   randomIterator: randomIterator
@@ -7720,7 +7764,7 @@ function randomIterator(array, customRandom) {
     };
 }
 
-},{}],67:[function(require,module,exports){
+},{}],69:[function(require,module,exports){
 module.exports = {
   ladder: ladder,
   complete: complete,
@@ -8021,7 +8065,7 @@ function wattsStrogatz(n, k, p, seed) {
   return g;
 }
 
-},{"ngraph.graph":68,"ngraph.random":69}],68:[function(require,module,exports){
+},{"ngraph.graph":70,"ngraph.random":71}],70:[function(require,module,exports){
 /**
  * @fileOverview Contains definition of the core graph object.
  */
@@ -8575,9 +8619,9 @@ function Link(fromId, toId, data, id) {
   this.id = id;
 }
 
-},{"ngraph.events":40}],69:[function(require,module,exports){
-arguments[4][66][0].apply(exports,arguments)
-},{"dup":66}],70:[function(require,module,exports){
+},{"ngraph.events":42}],71:[function(require,module,exports){
+arguments[4][68][0].apply(exports,arguments)
+},{"dup":68}],72:[function(require,module,exports){
 /*!
 	query-string
 	Parse and stringify URL query strings
@@ -8645,7 +8689,7 @@ arguments[4][66][0].apply(exports,arguments)
 	}
 })();
 
-},{}],71:[function(require,module,exports){
+},{}],73:[function(require,module,exports){
 /**
  * @author James Baicoianu / http://www.baicoianu.com/
  * Source: https://github.com/mrdoob/three.js/blob/master/examples/js/controls/FlyControls.js
@@ -8876,7 +8920,7 @@ function fly(camera, domElement, THREE) {
   }
 }
 
-},{"./keymap.js":72,"ngraph.events":73}],72:[function(require,module,exports){
+},{"./keymap.js":74,"ngraph.events":75}],74:[function(require,module,exports){
 /**
  * Defines default key bindings for the controls
  */
@@ -8899,9 +8943,9 @@ function createKeyMap() {
   };
 }
 
-},{}],73:[function(require,module,exports){
-arguments[4][40][0].apply(exports,arguments)
-},{"dup":40}],74:[function(require,module,exports){
+},{}],75:[function(require,module,exports){
+arguments[4][42][0].apply(exports,arguments)
+},{"dup":42}],76:[function(require,module,exports){
 // File:src/Three.js
 
 /**
@@ -43447,7 +43491,7 @@ THREE.MorphBlendMesh.prototype.update = function ( delta ) {
 
 };
 
-},{}],75:[function(require,module,exports){
+},{}],77:[function(require,module,exports){
 /**
  * This file contains all possible configuration optins for the renderer
  */
@@ -43502,4 +43546,4 @@ function validateOptions(options) {
   return options;
 }
 
-},{"./lib/keyCode.js":10}]},{},[1]);
+},{"./lib/keyCode.js":12}]},{},[1]);

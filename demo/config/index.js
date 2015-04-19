@@ -1,48 +1,25 @@
 var query = require('query-string').parse(window.location.search.substring(1));
 var graph = getGraphFromQueryString(query);
 var renderGraph = require('../../');
+var addCurrentNodeSettings = require('./nodeSettings.js');
 
 var renderer = renderGraph(graph, {
   settings: true // request to render settings user interface
 });
 
-renderer.on('nodeclick', showNodeDetails);
-
 var allSettings = renderer.settings();
 var gui = allSettings.gui();
-var nodeSettings = gui.addFolder('Current Node');
-var currentNode = {
-  id: '',
-  color: 0,
-  size: 0
-};
+var nodeSettings = addCurrentNodeSettings(gui, renderer);
 
-nodeSettings.add(currentNode, 'id');
-nodeSettings.addColor(currentNode, 'color').onChange(setColor);
-nodeSettings.add(currentNode, 'size', 0, 200).onChange(setSize);
-
-function setColor() {
-  if (currentNode.id) {
-    renderer.nodeColor(currentNode.id, currentNode.color);
-  }
-}
-
-function setSize() {
-  if (currentNode.id) {
-    renderer.nodeSize(currentNode.id, currentNode.size);
-  }
-}
+renderer.on('nodeclick', showNodeDetails);
 
 function showNodeDetails(node) {
-  currentNode.id = node.id;
-  currentNode.color = renderer.nodeColor(node.id);
-  currentNode.size = renderer.nodeSize(node.id);
-  nodeSettings.update();
+  nodeSettings.id = node.id;
+  nodeSettings.color = renderer.nodeColor(node.id);
+  nodeSettings.size = renderer.nodeSize(node.id);
+  nodeSettings.isPinned = renderer.layout().isNodePinned(node);
+  gui.update();
 }
-
-// you can list all available settings by calling: allSettings.list();
-// you can also remove individual settings that you don't want to show:
-// allSettings.remove(['View Settings', 'springCoeff']);
 
 function getGraphFromQueryString(query) {
   var graphGenerators = require('ngraph.generators');
