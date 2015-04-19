@@ -1,9 +1,10 @@
 # Settings
 
 `ngraph.pixel` allows you to configure various attributes of the layout and scene.
-These settings can be changed via API or by using user interface.
+These settings can be changed via API or by using user interface. Primary focus
+of this example is how to change settings via user interface.
 
-To show user interface call by default:
+To show the user interface call:
 
 ``` js
 var renderGraph = require('ngraph.pixel');
