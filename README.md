@@ -38,6 +38,8 @@ You can take a look at available demos:
 
 * [Basic "Hello world"](https://anvaka.github.io/ngraph.pixel/demo/basic/index.html?graph=balancedBinTree)
 * ["Hello world" with colors](https://anvaka.github.io/ngraph.pixel/demo/colors/index.html?graph=balancedBinTree)
+* [Configuring pixel](https://anvaka.github.io/ngraph.pixel/demo/colors/index.html?graph=balancedBinTree)
+* [Editing graph](https://anvaka.github.io/ngraph.pixel/demo/edit/index.html)
 
 
 # Feedback?
