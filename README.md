@@ -45,6 +45,7 @@ You can take a look at available demos:
 # Feedback?
 This is very early version of the library and your feedback is very much appreciated.
 Feel free to ping me over [email](https://github.com/anvaka), [twitter](https://twitter.com/anvaka), or open [issue here](https://github.com/anvaka/ngraph.pixel/issues/new)
+You can also join library discussion on [gitter](https://gitter.im/anvaka/VivaGraphJS)
 
 # install
 
