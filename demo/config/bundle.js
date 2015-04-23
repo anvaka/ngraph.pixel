@@ -461,7 +461,7 @@ function pixel(graph, options) {
   }
 }
 
-},{"./lib/autoFit.js":4,"./lib/edgeView.js":7,"./lib/flyTo.js":8,"./lib/input.js":10,"./lib/nodeView.js":13,"./lib/settings/index.js":14,"./lib/tooltip.js":17,"./options.js":77,"ngraph.events":42,"ngraph.forcelayout3d":43,"three":76}],4:[function(require,module,exports){
+},{"./lib/autoFit.js":4,"./lib/edgeView.js":7,"./lib/flyTo.js":8,"./lib/input.js":10,"./lib/nodeView.js":13,"./lib/settings/index.js":14,"./lib/tooltip.js":16,"./options.js":77,"ngraph.events":42,"ngraph.forcelayout3d":43,"three":76}],4:[function(require,module,exports){
 var flyTo = require('./flyTo.js');
 module.exports = createAutoFit;
 
@@ -1119,7 +1119,7 @@ function nodeView(scene) {
 },{"./createMaterial.js":5,"three":76}],14:[function(require,module,exports){
 var dat = require('exdat');
 var addGlobalViewSettings = require('./view.js');
-var addLayoutSettings = require('./layout.js');
+var addLayoutSettings = require('config.layout');
 
 module.exports = createSettingsView;
 
@@ -1236,49 +1236,7 @@ function createSettingsView(settingsAreVisible, renderer) {
   }
 }
 
-},{"./layout.js":15,"./view.js":16,"exdat":40}],15:[function(require,module,exports){
-/**
- * Controls physics engine settings (like spring length, drag coefficient, etc.
- */
-module.exports = addLayoutSettings;
-
-function addLayoutSettings(renderer, gui) {
-  var model = createLayoutModel(renderer);
-  var folder = gui.addFolder('Layout Settings');
-
-  folder.add(model, 'springLength', 0, 1000).onChange(setSimulatorOption('springLength'));
-  folder.add(model, 'springCoeff', 0, 0.1).onChange(setSimulatorOption('springCoeff'));
-  folder.add(model, 'gravity', -50, 0).onChange(setSimulatorOption('gravity'));
-  folder.add(model, 'theta', 0, 2).onChange(setSimulatorOption('theta'));
-  folder.add(model, 'dragCoeff', 0, 1).onChange(setSimulatorOption('dragCoeff'));
-  folder.add(model, 'timeStep', 1, 100).onChange(setSimulatorOption('timeStep'));
-
-  function setSimulatorOption(optionName) {
-    return function() {
-      // we need to call this every time, since renderer can update layout at any time
-      var layout = renderer.layout();
-      var simulator = layout.simulator;
-      simulator[optionName](model[optionName]);
-      renderer.stable(false);
-      renderer.focus();
-    };
-  }
-
-  function createLayoutModel(renderer) {
-    var layout = renderer.layout();
-    var simulator = layout.simulator;
-    return {
-      springLength: simulator.springLength(),
-      springCoeff: simulator.springCoeff(),
-      gravity: simulator.gravity(),
-      theta: simulator.theta(),
-      dragCoeff: simulator.dragCoeff(),
-      timeStep: simulator.timeStep()
-    };
-  }
-}
-
-},{}],16:[function(require,module,exports){
+},{"./view.js":15,"config.layout":17,"exdat":40}],15:[function(require,module,exports){
 /**
  * Controls available settings for the gobal view settings (like node colors,
  * size, 3d/2d, etc.)
@@ -1362,13 +1320,13 @@ function addGlobalViewSettings(renderer, gui) {
   }
 }
 
-},{}],17:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 /**
  * manages view for tooltips shown when user hover over a node
  */
 module.exports = createTooltipView;
 
-var tooltipStyle = ".ngraph-tooltip {\n  position: absolute;\n  color: white;\n  pointer-events: none;\n}\n";
+var tooltipStyle = ".ngraph-tooltip {\n  position: absolute;\n  color: white;\n  pointer-events: none;\n  padding: 3px;\n  background: rgba(0, 0, 0, 0.6);\n}\n";
 require('insert-css')(tooltipStyle);
 
 var elementClass = require('element-class');
@@ -1407,7 +1365,60 @@ function createTooltipView(container) {
   }
 }
 
-},{"element-class":18,"insert-css":41}],18:[function(require,module,exports){
+},{"element-class":18,"insert-css":41}],17:[function(require,module,exports){
+/**
+ * Controls physics engine settings, like spring length, drag coefficient, etc.
+ *
+ * @param {ngraph.pixel} renderer instance which is performing the renderer
+ * @param {dat.gui} gui instance which shows configuration interface
+ */
+module.exports = addLayoutSettings;
+
+function addLayoutSettings(renderer, gui) {
+  var model = createLayoutModel(renderer);
+  // Maybe in future localization will bite you, anvaka...
+  // -- Your friend from the past, you
+  var folder = gui.addFolder('Layout Settings');
+
+  folder.add(model, 'springLength', 0, 1000).onChange(setSimulatorOption('springLength'));
+  folder.add(model, 'springCoeff', 0, 0.1).onChange(setSimulatorOption('springCoeff'));
+  folder.add(model, 'gravity', -50, 0).onChange(setSimulatorOption('gravity'));
+  folder.add(model, 'theta', 0, 2).onChange(setSimulatorOption('theta'));
+  folder.add(model, 'dragCoeff', 0, 1).onChange(setSimulatorOption('dragCoeff'));
+  folder.add(model, 'timeStep', 1, 100).onChange(setSimulatorOption('timeStep'));
+
+  function setSimulatorOption(optionName) {
+    return function() {
+      // we need to call this every time, since renderer can update layout at any time
+      var layout = renderer.layout();
+      var simulator = layout.simulator;
+      simulator[optionName](model[optionName]);
+      renderer.stable(false);
+      renderer.focus();
+    };
+  }
+
+  function createLayoutModel(renderer) {
+    if (!renderer) throw new Error('Renderer is required for configuration options');
+
+    var layout = renderer.layout();
+    if (!layout) throw new Error('Could not get layout instance from the renderer');
+
+    var simulator = layout.simulator;
+    if (!simulator) throw new Error('Simlator is not defined on this layout instance');
+
+    return {
+      springLength: simulator.springLength(),
+      springCoeff: simulator.springCoeff(),
+      gravity: simulator.gravity(),
+      theta: simulator.theta(),
+      dragCoeff: simulator.dragCoeff(),
+      timeStep: simulator.timeStep()
+    };
+  }
+}
+
+},{}],18:[function(require,module,exports){
 module.exports = function(opts) {
   return new ElementClass(opts)
 }
@@ -8714,31 +8725,6 @@ function fly(camera, domElement, THREE) {
   domElement = domElement || document;
   domElement.setAttribute('tabindex', -1);
 
-  var api = {
-    rollSpeed: 0.005,
-    movementSpeed: 1,
-    dragToLook: true,
-    autoForward: false,
-    /**
-     * Requests to update camera position according to the currently pressed
-     * keys/mouse
-     */
-    update: update,
-
-    /**
-     * Releases all event handlers
-     */
-    destroy: destroy
-  };
-
-  eventify(api);
-
-  var tmpQuaternion = new THREE.Quaternion();
-  var isMouseDown = 0;
-  var keyMap = createKeyMap();
-  // we will remember what keys should be releaed in global keyup handler:
-  var pendingKeyUp = Object.create(null);
-
   var moveState = {
     up: 0,
     down: 0,
@@ -8753,6 +8739,41 @@ function fly(camera, domElement, THREE) {
     rollLeft: 0,
     rollRight: 0
   };
+
+
+  var api = {
+    rollSpeed: 0.005,
+    movementSpeed: 1,
+    dragToLook: true,
+    autoForward: false,
+    /**
+     * Requests to update camera position according to the currently pressed
+     * keys/mouse
+     */
+    update: update,
+
+    /**
+     * Releases all event handlers
+     */
+    destroy: destroy,
+
+    /**
+     * This allows external developers to better control our internal state
+     * Super flexible, yet a bit dangerous
+     */
+    moveState: moveState,
+
+    updateMovementVector: updateMovementVector,
+    updateRotationVector: updateRotationVector
+  };
+
+  eventify(api);
+
+  var tmpQuaternion = new THREE.Quaternion();
+  var isMouseDown = 0;
+  var keyMap = createKeyMap();
+  // we will remember what keys should be releaed in global keyup handler:
+  var pendingKeyUp = Object.create(null);
 
   var moveVector = new THREE.Vector3(0, 0, 0);
   var rotationVector = new THREE.Vector3(0, 0, 0);
