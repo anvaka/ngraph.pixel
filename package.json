@@ -35,6 +35,7 @@
   "dependencies": {
     "brfs": "^1.4.0",
     "config.layout": "^0.1.0",
+    "config.view": "^0.1.0",
     "element-class": "^0.2.0",
     "exdat": "0.6.2",
     "glslify": "^2.1.1",
