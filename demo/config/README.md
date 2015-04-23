@@ -1,4 +1,4 @@
-# Settings - [Demo](https://anvaka.github.io/ngraph.pixel/demo/colors/index.html?graph=balancedBinTree)
+# Settings - [Demo](https://anvaka.github.io/ngraph.pixel/demo/config/index.html?graph=balancedBinTree)
 
 [`ngraph.pixel`](https://github.com/anvaka/ngraph.pixel) allows you to configure
 various attributes of the layout and scene.
