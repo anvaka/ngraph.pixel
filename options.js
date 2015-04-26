@@ -43,11 +43,5 @@ function validateOptions(options) {
    */
   options.layoutToggleKey = typeof options.layoutToggleKey !== 'number' ? key.L : options.layoutToggleKey;
 
-  /**
-   * Request the library to render default user interface to configure its parameters
-   * This option is turned off by default.
-   */
-  options.settings = options.settings === undefined ? false : options.settings;
-
   return options;
 }

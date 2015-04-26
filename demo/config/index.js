@@ -1,14 +1,13 @@
+var createSettingsView = require('config.pixel');
 var query = require('query-string').parse(window.location.search.substring(1));
 var graph = getGraphFromQueryString(query);
 var renderGraph = require('../../');
 var addCurrentNodeSettings = require('./nodeSettings.js');
 
-var renderer = renderGraph(graph, {
-  settings: true // request to render settings user interface
-});
+var renderer = renderGraph(graph);
+var settingsView = createSettingsView(renderer);
+var gui = settingsView.gui();
 
-var allSettings = renderer.settings();
-var gui = allSettings.gui();
 var nodeSettings = addCurrentNodeSettings(gui, renderer);
 
 renderer.on('nodeclick', showNodeDetails);

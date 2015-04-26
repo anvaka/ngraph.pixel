@@ -3,7 +3,6 @@ var THREE = require('three');
 var eventify = require('ngraph.events');
 var createNodeView = require('./lib/nodeView.js');
 var createEdgeView = require('./lib/edgeView.js');
-var createSettingsView = require('./lib/settings/index.js');
 var createTooltipView = require('./lib/tooltip.js');
 var createAutoFit = require('./lib/autoFit.js');
 var createInput = require('./lib/input.js');
@@ -91,12 +90,6 @@ function pixel(graph, options) {
     focus: focus,
 
     /**
-     * Gets settings view controller which allows user to show/hide customization
-     * user interface
-     */
-    settings: settings,
-
-    /**
      * Requests renderer to move camera and focus on given node id.
      *
      * @param {string} nodeId identifier of the node to show
@@ -125,7 +118,6 @@ function pixel(graph, options) {
   run();
   focus();
 
-  var settingsView = createSettingsView(options.settings, api);
 
   return api;
 
@@ -369,10 +361,6 @@ function pixel(graph, options) {
   function focus() {
     var sceneElement = renderer && renderer.domElement;
     if (sceneElement && typeof sceneElement.focus === 'function') sceneElement.focus();
-  }
-
-  function settings() {
-    return settingsView;
   }
 
   function showNode(nodeId, stopDistance) {

@@ -1,18 +1,17 @@
+var createSettingsView = require('config.pixel');
 var generate = require('ngraph.generators');
 var createLegend = require('edgelegend');
 
 var graph = generate.grid(10, 10);
 var renderGraph = require('../../');
 
-var renderer = renderGraph(graph, {
-  settings: true // request to render settings user interface
-});
+var renderer = renderGraph(graph);
 
 // we do not need to show these options in the current demo:
-renderer.settings().remove(['View Settings', 'Layout Settings']);
+var settings = createSettingsView(renderer);
+settings.remove(['View Settings', 'Layout Settings']);
 
-
-createLegend(renderer, 'Groups', [{
+createLegend(settings, 'Groups', [{
   name: 'First',
   color: 0xff0000,
   filter: function (link) { return link.fromId <= 33; }

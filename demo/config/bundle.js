@@ -1,15 +1,14 @@
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+var createSettingsView = require('config.pixel');
 var query = require('query-string').parse(window.location.search.substring(1));
 var graph = getGraphFromQueryString(query);
 var renderGraph = require('../../');
 var addCurrentNodeSettings = require('./nodeSettings.js');
 
-var renderer = renderGraph(graph, {
-  settings: true // request to render settings user interface
-});
+var renderer = renderGraph(graph);
+var settingsView = createSettingsView(renderer);
+var gui = settingsView.gui();
 
-var allSettings = renderer.settings();
-var gui = allSettings.gui();
 var nodeSettings = addCurrentNodeSettings(gui, renderer);
 
 renderer.on('nodeclick', showNodeDetails);
@@ -33,7 +32,7 @@ function getNumber(string, defaultValue) {
   return (typeof number === 'number') && !isNaN(number) ? number : (defaultValue || 10);
 }
 
-},{"../../":3,"./nodeSettings.js":2,"ngraph.generators":69,"query-string":72}],2:[function(require,module,exports){
+},{"../../":3,"./nodeSettings.js":2,"config.pixel":16,"ngraph.generators":69,"query-string":72}],2:[function(require,module,exports){
 module.exports = createNodeSettings;
 
 function createNodeSettings(gui, renderer) {
@@ -83,7 +82,6 @@ var THREE = require('three');
 var eventify = require('ngraph.events');
 var createNodeView = require('./lib/nodeView.js');
 var createEdgeView = require('./lib/edgeView.js');
-var createSettingsView = require('./lib/settings/index.js');
 var createTooltipView = require('./lib/tooltip.js');
 var createAutoFit = require('./lib/autoFit.js');
 var createInput = require('./lib/input.js');
@@ -171,12 +169,6 @@ function pixel(graph, options) {
     focus: focus,
 
     /**
-     * Gets settings view controller which allows user to show/hide customization
-     * user interface
-     */
-    settings: settings,
-
-    /**
      * Requests renderer to move camera and focus on given node id.
      *
      * @param {string} nodeId identifier of the node to show
@@ -205,7 +197,6 @@ function pixel(graph, options) {
   run();
   focus();
 
-  var settingsView = createSettingsView(options.settings, api);
 
   return api;
 
@@ -451,17 +442,13 @@ function pixel(graph, options) {
     if (sceneElement && typeof sceneElement.focus === 'function') sceneElement.focus();
   }
 
-  function settings() {
-    return settingsView;
-  }
-
   function showNode(nodeId, stopDistance) {
     stopDistance = typeof stopDistance === 'number' ? stopDistance : 100;
     flyTo(camera, layout.getNodePosition(nodeId), stopDistance);
   }
 }
 
-},{"./lib/autoFit.js":4,"./lib/edgeView.js":7,"./lib/flyTo.js":8,"./lib/input.js":10,"./lib/nodeView.js":13,"./lib/settings/index.js":14,"./lib/tooltip.js":15,"./options.js":77,"ngraph.events":42,"ngraph.forcelayout3d":43,"three":76}],4:[function(require,module,exports){
+},{"./lib/autoFit.js":4,"./lib/edgeView.js":7,"./lib/flyTo.js":8,"./lib/input.js":10,"./lib/nodeView.js":13,"./lib/tooltip.js":14,"./options.js":77,"ngraph.events":42,"ngraph.forcelayout3d":43,"three":76}],4:[function(require,module,exports){
 var flyTo = require('./flyTo.js');
 module.exports = createAutoFit;
 
@@ -1117,17 +1104,115 @@ function nodeView(scene) {
 }
 
 },{"./createMaterial.js":5,"three":76}],14:[function(require,module,exports){
+/**
+ * manages view for tooltips shown when user hover over a node
+ */
+module.exports = createTooltipView;
+
+var tooltipStyle = ".ngraph-tooltip {\n  position: absolute;\n  color: white;\n  pointer-events: none;\n  padding: 3px;\n  background: rgba(0, 0, 0, 0.6);\n}\n";
+require('insert-css')(tooltipStyle);
+
+var elementClass = require('element-class');
+
+function createTooltipView(container) {
+  var view = {
+    show: show,
+    hide: hide
+  };
+
+  var tooltipDom, tooltipVisible;
+
+  return view;
+
+  function show(e, node) {
+    if (!tooltipDom) createTooltip();
+
+    tooltipDom.style.left = e.x + 'px';
+    tooltipDom.style.top = e.y + 'px';
+    tooltipDom.innerHTML = node.id;
+    tooltipVisible = true;
+  }
+
+  function hide() {
+    if (tooltipVisible) {
+      tooltipDom.style.left = '-10000px';
+      tooltipDom.style.top = '-10000px';
+      tooltipVisible = false;
+    }
+  }
+
+  function createTooltip() {
+    tooltipDom = document.createElement('div');
+    elementClass(tooltipDom).add('ngraph-tooltip');
+    container.appendChild(tooltipDom);
+  }
+}
+
+},{"element-class":18,"insert-css":41}],15:[function(require,module,exports){
+/**
+ * Controls physics engine settings, like spring length, drag coefficient, etc.
+ *
+ * @param {ngraph.pixel} renderer instance which is performing the renderer
+ * @param {dat.gui} gui instance which shows configuration interface
+ */
+module.exports = addLayoutSettings;
+
+function addLayoutSettings(renderer, gui) {
+  var model = createLayoutModel(renderer);
+  // Maybe in future localization will bite you, anvaka...
+  // -- Your friend from the past, you
+  var folder = gui.addFolder('Layout Settings');
+
+  folder.add(model, 'springLength', 0, 1000).onChange(setSimulatorOption('springLength'));
+  folder.add(model, 'springCoeff', 0, 0.1).onChange(setSimulatorOption('springCoeff'));
+  folder.add(model, 'gravity', -50, 0).onChange(setSimulatorOption('gravity'));
+  folder.add(model, 'theta', 0, 2).onChange(setSimulatorOption('theta'));
+  folder.add(model, 'dragCoeff', 0, 1).onChange(setSimulatorOption('dragCoeff'));
+  folder.add(model, 'timeStep', 1, 100).onChange(setSimulatorOption('timeStep'));
+
+  function setSimulatorOption(optionName) {
+    return function() {
+      // we need to call this every time, since renderer can update layout at any time
+      var layout = renderer.layout();
+      var simulator = layout.simulator;
+      simulator[optionName](model[optionName]);
+      renderer.stable(false);
+      renderer.focus();
+    };
+  }
+
+  function createLayoutModel(renderer) {
+    if (!renderer) throw new Error('Renderer is required for configuration options');
+
+    var layout = renderer.layout();
+    if (!layout) throw new Error('Could not get layout instance from the renderer');
+
+    var simulator = layout.simulator;
+    if (!simulator) throw new Error('Simlator is not defined on this layout instance');
+
+    return {
+      springLength: simulator.springLength(),
+      springCoeff: simulator.springCoeff(),
+      gravity: simulator.gravity(),
+      theta: simulator.theta(),
+      dragCoeff: simulator.dragCoeff(),
+      timeStep: simulator.timeStep()
+    };
+  }
+}
+
+},{}],16:[function(require,module,exports){
 var dat = require('exdat');
-// TODO: should this be part of the library?
 var addGlobalViewSettings = require('config.view');
 var addLayoutSettings = require('config.layout');
 
 module.exports = createSettingsView;
 
-function createSettingsView(settingsAreVisible, renderer) {
+function createSettingsView(renderer) {
   var gui;
+  var settingsAreVisible = true;
 
-  if (settingsAreVisible) initGUI();
+  initGUI();
 
   var api = {
     show: show,
@@ -1143,10 +1228,15 @@ function createSettingsView(settingsAreVisible, renderer) {
      *
      * @param {Array} list of strings, settings identifiers that we want to remove
      */
-    remove: remove
+    remove: remove,
+    renderer: getRenderer,
   };
 
   return api;
+
+  function getRenderer() {
+    return renderer;
+  }
 
   function remove(list) {
     if (!list) return;
@@ -1237,105 +1327,7 @@ function createSettingsView(settingsAreVisible, renderer) {
   }
 }
 
-},{"config.layout":16,"config.view":17,"exdat":40}],15:[function(require,module,exports){
-/**
- * manages view for tooltips shown when user hover over a node
- */
-module.exports = createTooltipView;
-
-var tooltipStyle = ".ngraph-tooltip {\n  position: absolute;\n  color: white;\n  pointer-events: none;\n  padding: 3px;\n  background: rgba(0, 0, 0, 0.6);\n}\n";
-require('insert-css')(tooltipStyle);
-
-var elementClass = require('element-class');
-
-function createTooltipView(container) {
-  var view = {
-    show: show,
-    hide: hide
-  };
-
-  var tooltipDom, tooltipVisible;
-
-  return view;
-
-  function show(e, node) {
-    if (!tooltipDom) createTooltip();
-
-    tooltipDom.style.left = e.x + 'px';
-    tooltipDom.style.top = e.y + 'px';
-    tooltipDom.innerHTML = node.id;
-    tooltipVisible = true;
-  }
-
-  function hide() {
-    if (tooltipVisible) {
-      tooltipDom.style.left = '-10000px';
-      tooltipDom.style.top = '-10000px';
-      tooltipVisible = false;
-    }
-  }
-
-  function createTooltip() {
-    tooltipDom = document.createElement('div');
-    elementClass(tooltipDom).add('ngraph-tooltip');
-    container.appendChild(tooltipDom);
-  }
-}
-
-},{"element-class":18,"insert-css":41}],16:[function(require,module,exports){
-/**
- * Controls physics engine settings, like spring length, drag coefficient, etc.
- *
- * @param {ngraph.pixel} renderer instance which is performing the renderer
- * @param {dat.gui} gui instance which shows configuration interface
- */
-module.exports = addLayoutSettings;
-
-function addLayoutSettings(renderer, gui) {
-  var model = createLayoutModel(renderer);
-  // Maybe in future localization will bite you, anvaka...
-  // -- Your friend from the past, you
-  var folder = gui.addFolder('Layout Settings');
-
-  folder.add(model, 'springLength', 0, 1000).onChange(setSimulatorOption('springLength'));
-  folder.add(model, 'springCoeff', 0, 0.1).onChange(setSimulatorOption('springCoeff'));
-  folder.add(model, 'gravity', -50, 0).onChange(setSimulatorOption('gravity'));
-  folder.add(model, 'theta', 0, 2).onChange(setSimulatorOption('theta'));
-  folder.add(model, 'dragCoeff', 0, 1).onChange(setSimulatorOption('dragCoeff'));
-  folder.add(model, 'timeStep', 1, 100).onChange(setSimulatorOption('timeStep'));
-
-  function setSimulatorOption(optionName) {
-    return function() {
-      // we need to call this every time, since renderer can update layout at any time
-      var layout = renderer.layout();
-      var simulator = layout.simulator;
-      simulator[optionName](model[optionName]);
-      renderer.stable(false);
-      renderer.focus();
-    };
-  }
-
-  function createLayoutModel(renderer) {
-    if (!renderer) throw new Error('Renderer is required for configuration options');
-
-    var layout = renderer.layout();
-    if (!layout) throw new Error('Could not get layout instance from the renderer');
-
-    var simulator = layout.simulator;
-    if (!simulator) throw new Error('Simlator is not defined on this layout instance');
-
-    return {
-      springLength: simulator.springLength(),
-      springCoeff: simulator.springCoeff(),
-      gravity: simulator.gravity(),
-      theta: simulator.theta(),
-      dragCoeff: simulator.dragCoeff(),
-      timeStep: simulator.timeStep()
-    };
-  }
-}
-
-},{}],17:[function(require,module,exports){
+},{"config.layout":15,"config.view":17,"exdat":40}],17:[function(require,module,exports){
 /**
  * Controls available settings for the gobal view settings (like node colors,
  * size, 3d/2d, etc.)
@@ -43568,12 +43560,6 @@ function validateOptions(options) {
    * is ignored unless `options.toggleEnabled` is set to true;
    */
   options.layoutToggleKey = typeof options.layoutToggleKey !== 'number' ? key.L : options.layoutToggleKey;
-
-  /**
-   * Request the library to render default user interface to configure its parameters
-   * This option is turned off by default.
-   */
-  options.settings = options.settings === undefined ? false : options.settings;
 
   return options;
 }
