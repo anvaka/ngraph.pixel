@@ -1,6 +1,6 @@
 {
   "name": "ngraph.pixel",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "3d/2d graph renderer based on particle material and three.js",
   "main": "index.js",
   "scripts": {
