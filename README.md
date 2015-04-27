@@ -1,6 +1,6 @@
 # ngraph.pixel
 
-3d/2d graph renderer based on particle material and three.js
+Fast graph renderer based on low level ShaderMaterial from three.js
 
 # usage
 
@@ -19,17 +19,11 @@ By default use keyboard keys `WASD` to fly around, and click and drag with
 mouse to point the camera. This is not the most convenient way to navigate
 the scene, so your feedback is very welcome.
 
-You can switch between 3D and 2D layout by calling `is3d()` method:
-
-``` js
-renderer.is3d(false); // use 2d mode
-renderer.is3d(true); // go back to 3d space
-```
-
-By default graph is rendered in 3D:
+By default graph is laid out using [pixel.layout](https://github.com/anvaka/pixel.layout)
+module, which can layout graphs in both 3D:
 ![3d graph is default](http://i.imgur.com/zMJCtyk.png)
 
-You can also press `L` key to toggle layout at runtime:
+and 2D spaces:
 ![2d graph](http://i.imgur.com/SCRFvnQ.png)
 
 # demo
