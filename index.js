@@ -103,7 +103,8 @@ function pixel(graph, options) {
 
   var container = options.container;
   var is3d = options.is3d;
-  var layout = is3d ? layout3d(graph, options.physics) : layout2d(graph, options.physics);
+  var layout = (options.layout) ? options.layout : (
+    is3d ? layout3d(graph, options.physics) : layout2d(graph, options.physics));
   var isStable = false;
   var nodeIdToIdx = Object.create(null);
   var edgeIdToIdx = Object.create(null);
