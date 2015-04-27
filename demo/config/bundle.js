@@ -32,7 +32,7 @@ function getNumber(string, defaultValue) {
   return (typeof number === 'number') && !isNaN(number) ? number : (defaultValue || 10);
 }
 
-},{"../../":3,"./nodeSettings.js":2,"config.pixel":16,"ngraph.generators":69,"query-string":72}],2:[function(require,module,exports){
+},{"../../":3,"./nodeSettings.js":2,"config.pixel":15,"ngraph.generators":43,"query-string":73}],2:[function(require,module,exports){
 module.exports = createNodeSettings;
 
 function createNodeSettings(gui, renderer) {
@@ -85,24 +85,13 @@ var createEdgeView = require('./lib/edgeView.js');
 var createTooltipView = require('./lib/tooltip.js');
 var createAutoFit = require('./lib/autoFit.js');
 var createInput = require('./lib/input.js');
-var layout3d = require('ngraph.forcelayout3d');
-var layout2d = layout3d.get2dLayout;
+var createLayout = require('pixel.layout');
 var validateOptions = require('./options.js');
 var flyTo = require('./lib/flyTo.js');
 
 function pixel(graph, options) {
   // This is our public API.
   var api = {
-    /**
-     * Toggle rendering mode between 2d and 3d
-     *
-     * @param {boolean+} newMode if set to true, the renderer will switch to 3d
-     * rendering mode. If set to false, the renderer will switch to 2d mode.
-     * Finally if this argument is not defined, then current rendering mode is
-     * returned.
-     */
-    is3d: mode3d,
-
     /**
      * Set or get size of a node
      *
@@ -181,8 +170,10 @@ function pixel(graph, options) {
   options = validateOptions(options);
 
   var container = options.container;
-  var is3d = options.is3d;
-  var layout = is3d ? layout3d(graph, options.physics) : layout2d(graph, options.physics);
+  var layout = createLayout(graph, options);
+  if (layout && typeof layout.on === 'function') {
+    layout.on('reset', layoutReset);
+  }
   var isStable = false;
   var nodeIdToIdx = Object.create(null);
   var edgeIdToIdx = Object.create(null);
@@ -197,17 +188,11 @@ function pixel(graph, options) {
   run();
   focus();
 
-
   return api;
 
-  function mode3d(newMode) {
-    if (newMode === undefined) {
-      return is3d;
-    }
-    if (newMode !== is3d) {
-      toggleLayout();
-    }
-    return api;
+  function layoutReset() {
+    initPositions();
+    stable(false);
   }
 
   function run() {
@@ -259,7 +244,7 @@ function pixel(graph, options) {
 
     function addNodePosition(node) {
       var position = layout.getNodePosition(node.id);
-      if (!is3d) position.z = 0;
+      if (typeof position.z !== 'number') position.z = 0;
       nodePositions.push(position);
       nodeIdToIdx[node.id] = idx;
       nodeIdxToId[idx] = node.id;
@@ -291,13 +276,13 @@ function pixel(graph, options) {
     renderer = new THREE.WebGLRenderer({
       antialias: false
     });
+
     renderer.setClearColor(options.clearColor, 1);
     renderer.setSize(container.clientWidth, container.clientHeight);
     container.appendChild(renderer.domElement);
 
     input = createInput(camera, graph, renderer.domElement);
     input.on('move', stopAutoFit);
-    input.onKey(options.layoutToggleKey, toggleLayout);
     input.on('nodeover', setTooltip);
     input.on('nodeclick', passthrough('nodeclick'));
     input.on('nodedblclick', passthrough('nodedblclick'));
@@ -350,43 +335,6 @@ function pixel(graph, options) {
 
   function getNodeByIndex(nodeIndex) {
     return nodeIndex && graph.getNode(nodeIdxToId[nodeIndex]);
-  }
-
-  function toggleLayout() {
-    layout.dispose();
-    is3d = !is3d;
-    var physics = copyPhysicsSettings(layout.simulator);
-
-    if (is3d) {
-      layout = layout3d(graph, physics);
-    } else {
-      layout = layout2d(graph, physics);
-    }
-    Object.keys(nodeIdToIdx).forEach(initLayout);
-
-    initPositions();
-    stable(false);
-    api.fire('modeChanged', is3d);
-
-    function initLayout(nodeId) {
-      var idx = nodeIdToIdx[nodeId];
-      var pos = nodePositions[idx];
-      // we need to bump 3d positions, so that forces are disturbed:
-      if (is3d) pos.z = (idx % 2 === 0) ? -1 : 1;
-      else pos.z = 0;
-      layout.setNodePosition(nodeId, pos.x, pos.y, pos.z);
-    }
-  }
-
-  function copyPhysicsSettings(simulator) {
-    return {
-      springLength: simulator.springLength(),
-      springCoeff: simulator.springCoeff(),
-      gravity: simulator.gravity(),
-      theta: simulator.theta(),
-      dragCoeff: simulator.dragCoeff(),
-      timeStep: simulator.timeStep()
-    };
   }
 
   function stopAutoFit() {
@@ -448,7 +396,7 @@ function pixel(graph, options) {
   }
 }
 
-},{"./lib/autoFit.js":4,"./lib/edgeView.js":7,"./lib/flyTo.js":8,"./lib/input.js":10,"./lib/nodeView.js":13,"./lib/tooltip.js":14,"./options.js":77,"ngraph.events":42,"ngraph.forcelayout3d":43,"three":76}],4:[function(require,module,exports){
+},{"./lib/autoFit.js":4,"./lib/edgeView.js":7,"./lib/flyTo.js":8,"./lib/input.js":10,"./lib/nodeView.js":13,"./lib/tooltip.js":14,"./options.js":77,"ngraph.events":42,"pixel.layout":46,"three":76}],4:[function(require,module,exports){
 var flyTo = require('./flyTo.js');
 module.exports = createAutoFit;
 
@@ -959,7 +907,7 @@ function createInput(camera, graph, domElement) {
   }
 }
 
-},{"./hitTest.js":9,"ngraph.events":42,"three":76,"three.fly":73}],11:[function(require,module,exports){
+},{"./hitTest.js":9,"ngraph.events":42,"three":76,"three.fly":74}],11:[function(require,module,exports){
 module.exports = intersect;
 
 /**
@@ -1149,59 +1097,6 @@ function createTooltipView(container) {
 }
 
 },{"element-class":18,"insert-css":41}],15:[function(require,module,exports){
-/**
- * Controls physics engine settings, like spring length, drag coefficient, etc.
- *
- * @param {ngraph.pixel} renderer instance which is performing the renderer
- * @param {dat.gui} gui instance which shows configuration interface
- */
-module.exports = addLayoutSettings;
-
-function addLayoutSettings(renderer, gui) {
-  var model = createLayoutModel(renderer);
-  // Maybe in future localization will bite you, anvaka...
-  // -- Your friend from the past, you
-  var folder = gui.addFolder('Layout Settings');
-
-  folder.add(model, 'springLength', 0, 1000).onChange(setSimulatorOption('springLength'));
-  folder.add(model, 'springCoeff', 0, 0.1).onChange(setSimulatorOption('springCoeff'));
-  folder.add(model, 'gravity', -50, 0).onChange(setSimulatorOption('gravity'));
-  folder.add(model, 'theta', 0, 2).onChange(setSimulatorOption('theta'));
-  folder.add(model, 'dragCoeff', 0, 1).onChange(setSimulatorOption('dragCoeff'));
-  folder.add(model, 'timeStep', 1, 100).onChange(setSimulatorOption('timeStep'));
-
-  function setSimulatorOption(optionName) {
-    return function() {
-      // we need to call this every time, since renderer can update layout at any time
-      var layout = renderer.layout();
-      var simulator = layout.simulator;
-      simulator[optionName](model[optionName]);
-      renderer.stable(false);
-      renderer.focus();
-    };
-  }
-
-  function createLayoutModel(renderer) {
-    if (!renderer) throw new Error('Renderer is required for configuration options');
-
-    var layout = renderer.layout();
-    if (!layout) throw new Error('Could not get layout instance from the renderer');
-
-    var simulator = layout.simulator;
-    if (!simulator) throw new Error('Simlator is not defined on this layout instance');
-
-    return {
-      springLength: simulator.springLength(),
-      springCoeff: simulator.springCoeff(),
-      gravity: simulator.gravity(),
-      theta: simulator.theta(),
-      dragCoeff: simulator.dragCoeff(),
-      timeStep: simulator.timeStep()
-    };
-  }
-}
-
-},{}],16:[function(require,module,exports){
 var dat = require('exdat');
 var addGlobalViewSettings = require('config.view');
 var addLayoutSettings = require('config.layout');
@@ -1211,8 +1106,6 @@ module.exports = createSettingsView;
 function createSettingsView(renderer) {
   var gui;
   var settingsAreVisible = true;
-
-  initGUI();
 
   var api = {
     show: show,
@@ -1231,6 +1124,8 @@ function createSettingsView(renderer) {
     remove: remove,
     renderer: getRenderer,
   };
+
+  initGUI();
 
   return api;
 
@@ -1322,12 +1217,84 @@ function createSettingsView(renderer) {
 
   function initGUI() {
     gui = new dat.GUI();
-    addGlobalViewSettings(renderer, gui);
-    addLayoutSettings(renderer, gui);
+    addGlobalViewSettings(api);
+    addLayoutSettings(api);
   }
 }
 
-},{"config.layout":15,"config.view":17,"exdat":40}],17:[function(require,module,exports){
+},{"config.layout":16,"config.view":17,"exdat":40}],16:[function(require,module,exports){
+/**
+ * Controls physics engine settings, like spring length, drag coefficient, etc.
+ *
+ * @param {config.pixel} renderer settings controller (see https://github.com/anvaka/config.pixel)
+ */
+module.exports = addLayoutSettings;
+
+function addLayoutSettings(settings) {
+  var renderer = settings.renderer();
+  var layout = renderer.layout();
+  var gui = settings.gui();
+  var model = createLayoutModel(renderer);
+  // Maybe in future localization will bite you, anvaka...
+  // -- Your friend from the past, you
+  var folder = gui.addFolder('Layout Settings');
+
+  var support3d = typeof layout.on === 'function' && typeof layout.is3d === 'function';
+  if (support3d) {
+    layout.on('reset', updateMode);
+    folder.add(model, 'is3d').onChange(set3dMode);
+  }
+
+  folder.add(model, 'springLength', 0, 1000).onChange(setSimulatorOption('springLength'));
+  folder.add(model, 'springCoeff', 0, 0.1).onChange(setSimulatorOption('springCoeff'));
+  folder.add(model, 'gravity', -50, 0).onChange(setSimulatorOption('gravity'));
+  folder.add(model, 'theta', 0, 2).onChange(setSimulatorOption('theta'));
+  folder.add(model, 'dragCoeff', 0, 1).onChange(setSimulatorOption('dragCoeff'));
+  folder.add(model, 'timeStep', 1, 100).onChange(setSimulatorOption('timeStep'));
+
+  function setSimulatorOption(optionName) {
+    return function() {
+      // we need to call this every time, since renderer can update layout at any time
+      var layout = renderer.layout();
+      var simulator = layout.simulator;
+      simulator[optionName](model[optionName]);
+      renderer.stable(false);
+      renderer.focus();
+    };
+  }
+
+  function set3dMode() {
+    layout.is3d(model.is3d);
+    renderer.focus();
+  }
+
+  function updateMode() {
+    model.is3d = layout.is3d();
+    gui.update();
+  }
+
+  function createLayoutModel(renderer) {
+    if (!renderer) throw new Error('Renderer is required for configuration options');
+
+    var layout = renderer.layout();
+    if (!layout) throw new Error('Could not get layout instance from the renderer');
+
+    var simulator = layout.simulator;
+    if (!simulator) throw new Error('Simlator is not defined on this layout instance');
+
+    return {
+      is3d: true,
+      springLength: simulator.springLength(),
+      springCoeff: simulator.springCoeff(),
+      gravity: simulator.gravity(),
+      theta: simulator.theta(),
+      dragCoeff: simulator.dragCoeff(),
+      timeStep: simulator.timeStep()
+    };
+  }
+}
+
+},{}],17:[function(require,module,exports){
 /**
  * Controls available settings for the gobal view settings (like node colors,
  * size, 3d/2d, etc.)
@@ -1337,7 +1304,9 @@ function createSettingsView(renderer) {
  */
 module.exports = addGlobalViewSettings;
 
-function addGlobalViewSettings(renderer, gui) {
+function addGlobalViewSettings(settings) {
+  var gui = settings.gui();
+  var renderer = settings.renderer();
   var folder = gui.addFolder('View Settings');
 
   var model = {
@@ -1345,7 +1314,6 @@ function addGlobalViewSettings(renderer, gui) {
     linkStartColor: [0x33, 0x33, 0x33],
     linkEndColor: [0x33, 0x33, 0x33],
     nodeSize: 15,
-    is3d: true,
     stable: changeStable
   };
 
@@ -1354,12 +1322,10 @@ function addGlobalViewSettings(renderer, gui) {
   folder.add(model, 'nodeSize', 0, 200).onChange(setNodeSize);
   folder.addColor(model, 'linkStartColor').onChange(setLinkColor);
   folder.addColor(model, 'linkEndColor').onChange(setLinkColor);
-  folder.add(model, 'is3d').onChange(set3dMode);
   folder.open();
 
   // TODO: add gui.destroyed, so that we can release renderer events:
   // whenever user changes mode via API/keyboard, reflect it in our UI:
-  renderer.on('modeChanged', updateMode);
   renderer.on('stable', updateStableUI);
 
   function changeStable() {
@@ -1370,16 +1336,6 @@ function addGlobalViewSettings(renderer, gui) {
   function updateStableUI() {
     var isStable = renderer.stable();
     stableController.name(isStable ? 'Resume Layout' : 'Pause Layout');
-  }
-
-  function updateMode(newMode) {
-    model.is3d = newMode;
-    gui.update();
-  }
-
-  function set3dMode() {
-    renderer.is3d(model.is3d);
-    renderer.focus();
   }
 
   function setNodeColor() {
@@ -5589,2196 +5545,6 @@ function validateSubject(subject) {
 }
 
 },{}],43:[function(require,module,exports){
-/**
- * This module provides all required forces to regular ngraph.physics.simulator
- * to make it 3D simulator. Ideally ngraph.physics.simulator should operate
- * with vectors, but on practices that showed performance decrease... Maybe
- * I was doing it wrong, will see if I can refactor/throw away this module.
- */
-module.exports = createLayout;
-createLayout.get2dLayout = require('ngraph.forcelayout');
-
-function createLayout(graph, physicsSettings) {
-  var merge = require('ngraph.merge');
-  physicsSettings = merge(physicsSettings, {
-        createQuadTree: require('ngraph.quadtreebh3d'),
-        createBounds: require('./lib/bounds'),
-        createDragForce: require('./lib/dragForce'),
-        createSpringForce: require('./lib/springForce'),
-        integrator: require('./lib/eulerIntegrator'),
-        createBody: require('./lib/createBody')
-      });
-
-  return createLayout.get2dLayout(graph, physicsSettings);
-}
-
-},{"./lib/bounds":44,"./lib/createBody":45,"./lib/dragForce":46,"./lib/eulerIntegrator":47,"./lib/springForce":48,"ngraph.forcelayout":50,"ngraph.merge":62,"ngraph.quadtreebh3d":64}],44:[function(require,module,exports){
-module.exports = function (bodies, settings) {
-  var random = require('ngraph.random').random(42);
-  var boundingBox =  { x1: 0, y1: 0, z1: 0, x2: 0, y2: 0, z2: 0 };
-
-  return {
-    box: boundingBox,
-
-    update: updateBoundingBox,
-
-    reset : function () {
-      boundingBox.x1 = boundingBox.y1 = 0;
-      boundingBox.x2 = boundingBox.y2 = 0;
-      boundingBox.z1 = boundingBox.z2 = 0;
-    },
-
-    getBestNewPosition: function (neighbors) {
-      var graphRect = boundingBox;
-
-      var baseX = 0, baseY = 0, baseZ = 0;
-
-      if (neighbors.length) {
-        for (var i = 0; i < neighbors.length; ++i) {
-          baseX += neighbors[i].pos.x;
-          baseY += neighbors[i].pos.y;
-          baseZ += neighbors[i].pos.z;
-        }
-
-        baseX /= neighbors.length;
-        baseY /= neighbors.length;
-        baseZ /= neighbors.length;
-      } else {
-        baseX = (graphRect.x1 + graphRect.x2) / 2;
-        baseY = (graphRect.y1 + graphRect.y2) / 2;
-        baseZ = (graphRect.z1 + graphRect.z2) / 2;
-      }
-
-      var springLength = settings.springLength;
-      return {
-        x: baseX + random.next(springLength) - springLength / 2,
-        y: baseY + random.next(springLength) - springLength / 2,
-        z: baseZ + random.next(springLength) - springLength / 2
-      };
-    }
-  };
-
-  function updateBoundingBox() {
-    var i = bodies.length;
-    if (i === 0) { return; } // don't have to wory here.
-
-    var x1 = Number.MAX_VALUE,
-        y1 = Number.MAX_VALUE,
-        z1 = Number.MAX_VALUE,
-        x2 = Number.MIN_VALUE,
-        y2 = Number.MIN_VALUE,
-        z2 = Number.MIN_VALUE;
-
-    while(i--) {
-      // this is O(n), could it be done faster with quadtree?
-      // how about pinned nodes?
-      var body = bodies[i];
-      if (body.isPinned) {
-        body.pos.x = body.prevPos.x;
-        body.pos.y = body.prevPos.y;
-        body.pos.z = body.prevPos.z;
-      } else {
-        body.prevPos.x = body.pos.x;
-        body.prevPos.y = body.pos.y;
-        body.prevPos.z = body.pos.z;
-      }
-      if (body.pos.x < x1) {
-        x1 = body.pos.x;
-      }
-      if (body.pos.x > x2) {
-        x2 = body.pos.x;
-      }
-      if (body.pos.y < y1) {
-        y1 = body.pos.y;
-      }
-      if (body.pos.y > y2) {
-        y2 = body.pos.y;
-      }
-      if (body.pos.z < z1) {
-        z1 = body.pos.z;
-      }
-      if (body.pos.z > z2) {
-        z2 = body.pos.z;
-      }
-    }
-
-    boundingBox.x1 = x1;
-    boundingBox.x2 = x2;
-    boundingBox.y1 = y1;
-    boundingBox.y2 = y2;
-    boundingBox.z1 = z1;
-    boundingBox.z2 = z2;
-  }
-};
-
-},{"ngraph.random":68}],45:[function(require,module,exports){
-var physics = require('ngraph.physics.primitives');
-
-module.exports = function(pos) {
-  return new physics.Body3d(pos);
-}
-
-},{"ngraph.physics.primitives":63}],46:[function(require,module,exports){
-/**
- * Represents 3d drag force, which reduces force value on each step by given
- * coefficient.
- *
- * @param {Object} options for the drag force
- * @param {Number=} options.dragCoeff drag force coefficient. 0.1 by default
- */
-module.exports = function (options) {
-  var merge = require('ngraph.merge'),
-      expose = require('ngraph.expose');
-
-  options = merge(options, {
-    dragCoeff: 0.02
-  });
-
-  var api = {
-    update : function (body) {
-      body.force.x -= options.dragCoeff * body.velocity.x;
-      body.force.y -= options.dragCoeff * body.velocity.y;
-      body.force.z -= options.dragCoeff * body.velocity.z;
-    }
-  };
-
-  // let easy access to dragCoeff:
-  expose(options, api, ['dragCoeff']);
-
-  return api;
-};
-
-},{"ngraph.expose":49,"ngraph.merge":62}],47:[function(require,module,exports){
-/**
- * Performs 3d forces integration, using given timestep. Uses Euler method to solve
- * differential equation (http://en.wikipedia.org/wiki/Euler_method ).
- *
- * @returns {Number} squared distance of total position updates.
- */
-
-module.exports = integrate;
-
-function integrate(bodies, timeStep) {
-  var dx = 0, tx = 0,
-      dy = 0, ty = 0,
-      dz = 0, tz = 0,
-      i,
-      max = bodies.length;
-
-  for (i = 0; i < max; ++i) {
-    var body = bodies[i],
-        coeff = timeStep / body.mass;
-
-    body.velocity.x += coeff * body.force.x;
-    body.velocity.y += coeff * body.force.y;
-    body.velocity.z += coeff * body.force.z;
-
-    var vx = body.velocity.x,
-        vy = body.velocity.y,
-        vz = body.velocity.z,
-        v = Math.sqrt(vx * vx + vy * vy + vz * vz);
-
-    if (v > 1) {
-      body.velocity.x = vx / v;
-      body.velocity.y = vy / v;
-      body.velocity.z = vz / v;
-    }
-
-    dx = timeStep * body.velocity.x;
-    dy = timeStep * body.velocity.y;
-    dz = timeStep * body.velocity.z;
-
-    body.pos.x += dx;
-    body.pos.y += dy;
-    body.pos.z += dz;
-
-    tx += Math.abs(dx); ty += Math.abs(dy); tz += Math.abs(dz);
-  }
-
-  return (tx * tx + ty * ty + tz * tz)/bodies.length;
-}
-
-},{}],48:[function(require,module,exports){
-/**
- * Represents 3d spring force, which updates forces acting on two bodies, conntected
- * by a spring.
- *
- * @param {Object} options for the spring force
- * @param {Number=} options.springCoeff spring force coefficient.
- * @param {Number=} options.springLength desired length of a spring at rest.
- */
-module.exports = function (options) {
-  var merge = require('ngraph.merge');
-  var random = require('ngraph.random').random(42);
-  var expose = require('ngraph.expose');
-
-  options = merge(options, {
-    springCoeff: 0.0002,
-    springLength: 80
-  });
-
-  var api = {
-    /**
-     * Upsates forces acting on a spring
-     */
-    update : function (spring) {
-      var body1 = spring.from,
-          body2 = spring.to,
-          length = spring.length < 0 ? options.springLength : spring.length,
-          dx = body2.pos.x - body1.pos.x,
-          dy = body2.pos.y - body1.pos.y,
-          dz = body2.pos.z - body1.pos.z,
-          r = Math.sqrt(dx * dx + dy * dy + dz * dz);
-
-      if (r === 0) {
-          dx = (random.nextDouble() - 0.5) / 50;
-          dy = (random.nextDouble() - 0.5) / 50;
-          dz = (random.nextDouble() - 0.5) / 50;
-          r = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      }
-
-      var d = r - length;
-      var coeff = ((!spring.coeff || spring.coeff < 0) ? options.springCoeff : spring.coeff) * d / r * spring.weight;
-
-      body1.force.x += coeff * dx;
-      body1.force.y += coeff * dy;
-      body1.force.z += coeff * dz;
-
-      body2.force.x -= coeff * dx;
-      body2.force.y -= coeff * dy;
-      body2.force.z -= coeff * dz;
-    }
-  };
-
-  expose(options, api, ['springCoeff', 'springLength']);
-  return api;
-}
-
-},{"ngraph.expose":49,"ngraph.merge":62,"ngraph.random":68}],49:[function(require,module,exports){
-module.exports = exposeProperties;
-
-/**
- * Augments `target` object with getter/setter functions, which modify settings
- *
- * @example
- *  var target = {};
- *  exposeProperties({ age: 42}, target);
- *  target.age(); // returns 42
- *  target.age(24); // make age 24;
- *
- *  var filteredTarget = {};
- *  exposeProperties({ age: 42, name: 'John'}, filteredTarget, ['name']);
- *  filteredTarget.name(); // returns 'John'
- *  filteredTarget.age === undefined; // true
- */
-function exposeProperties(settings, target, filter) {
-  var needsFilter = Object.prototype.toString.call(filter) === '[object Array]';
-  if (needsFilter) {
-    for (var i = 0; i < filter.length; ++i) {
-      augment(settings, target, filter[i]);
-    }
-  } else {
-    for (var key in settings) {
-      augment(settings, target, key);
-    }
-  }
-}
-
-function augment(source, target, key) {
-  if (source.hasOwnProperty(key)) {
-    if (typeof target[key] === 'function') {
-      // this accessor is already defined. Ignore it
-      return;
-    }
-    target[key] = function (value) {
-      if (value !== undefined) {
-        source[key] = value;
-        return target;
-      }
-      return source[key];
-    }
-  }
-}
-
-},{}],50:[function(require,module,exports){
-module.exports = createLayout;
-module.exports.simulator = require('ngraph.physics.simulator');
-
-/**
- * Creates force based layout for a given graph.
- * @param {ngraph.graph} graph which needs to be laid out
- * @param {object} physicsSettings if you need custom settings
- * for physics simulator you can pass your own settings here. If it's not passed
- * a default one will be created.
- */
-function createLayout(graph, physicsSettings) {
-  if (!graph) {
-    throw new Error('Graph structure cannot be undefined');
-  }
-
-  var createSimulator = require('ngraph.physics.simulator');
-  var physicsSimulator = createSimulator(physicsSettings);
-
-  var nodeBodies = typeof Object.create === 'function' ? Object.create(null) : {};
-  var springs = {};
-
-  var springTransform = physicsSimulator.settings.springTransform || noop;
-
-  // Initialize physical objects according to what we have in the graph:
-  initPhysics();
-  listenToGraphEvents();
-
-  var api = {
-    /**
-     * Performs one step of iterative layout algorithm
-     */
-    step: function() {
-      return physicsSimulator.step();
-    },
-
-    /**
-     * For a given `nodeId` returns position
-     */
-    getNodePosition: function (nodeId) {
-      return getInitializedBody(nodeId).pos;
-    },
-
-    /**
-     * Sets position of a node to a given coordinates
-     * @param {string} nodeId node identifier
-     * @param {number} x position of a node
-     * @param {number} y position of a node
-     * @param {number=} z position of node (only if applicable to body)
-     */
-    setNodePosition: function (nodeId) {
-      var body = getInitializedBody(nodeId);
-      body.setPosition.apply(body, Array.prototype.slice.call(arguments, 1));
-    },
-
-    /**
-     * @returns {Object} Link position by link id
-     * @returns {Object.from} {x, y} coordinates of link start
-     * @returns {Object.to} {x, y} coordinates of link end
-     */
-    getLinkPosition: function (linkId) {
-      var spring = springs[linkId];
-      if (spring) {
-        return {
-          from: spring.from.pos,
-          to: spring.to.pos
-        };
-      }
-    },
-
-    /**
-     * @returns {Object} area required to fit in the graph. Object contains
-     * `x1`, `y1` - top left coordinates
-     * `x2`, `y2` - bottom right coordinates
-     */
-    getGraphRect: function () {
-      return physicsSimulator.getBBox();
-    },
-
-    /*
-     * Requests layout algorithm to pin/unpin node to its current position
-     * Pinned nodes should not be affected by layout algorithm and always
-     * remain at their position
-     */
-    pinNode: function (node, isPinned) {
-      var body = getInitializedBody(node.id);
-       body.isPinned = !!isPinned;
-    },
-
-    /**
-     * Checks whether given graph's node is currently pinned
-     */
-    isNodePinned: function (node) {
-      return getInitializedBody(node.id).isPinned;
-    },
-
-    /**
-     * Request to release all resources
-     */
-    dispose: function() {
-      graph.off('changed', onGraphChanged);
-    },
-
-    /**
-     * Gets physical body for a given node id. If node is not found undefined
-     * value is returned.
-     */
-    getBody: getBody,
-
-    /**
-     * Gets spring for a given edge.
-     *
-     * @param {string} linkId link identifer. If two arguments are passed then
-     * this argument is treated as formNodeId
-     * @param {string=} toId when defined this parameter denotes head of the link
-     * and first argument is trated as tail of the link (fromId)
-     */
-    getSpring: getSpring,
-
-    /**
-     * [Read only] Gets current physics simulator
-     */
-    simulator: physicsSimulator
-  };
-
-  return api;
-
-  function getSpring(fromId, toId) {
-    var linkId;
-    if (toId === undefined) {
-      if (typeof fromId === 'string') {
-        // assume fromId as a linkId:
-        linkId = fromId;
-      } else {
-        // assume fromId to be a link object:
-        linkId = fromId.id;
-      }
-    } else {
-      // toId is defined, should grab link:
-      var link = graph.hasLink(fromId, toId);
-      if (!link) return;
-      linkId = link.id;
-    }
-
-    return springs[linkId];
-  }
-
-  function getBody(nodeId) {
-    return nodeBodies[nodeId];
-  }
-
-  function listenToGraphEvents() {
-    graph.on('changed', onGraphChanged);
-  }
-
-  function onGraphChanged(changes) {
-    for (var i = 0; i < changes.length; ++i) {
-      var change = changes[i];
-      if (change.changeType === 'add') {
-        if (change.node) {
-          initBody(change.node.id);
-        }
-        if (change.link) {
-          initLink(change.link);
-        }
-      } else if (change.changeType === 'remove') {
-        if (change.node) {
-          releaseNode(change.node);
-        }
-        if (change.link) {
-          releaseLink(change.link);
-        }
-      }
-    }
-  }
-
-  function initPhysics() {
-    graph.forEachNode(function (node) {
-      initBody(node.id);
-    });
-    graph.forEachLink(initLink);
-  }
-
-  function initBody(nodeId) {
-    var body = nodeBodies[nodeId];
-    if (!body) {
-      var node = graph.getNode(nodeId);
-      if (!node) {
-        throw new Error('initBody() was called with unknown node id');
-      }
-
-      var pos = node.position;
-      if (!pos) {
-        var neighbors = getNeighborBodies(node);
-        pos = physicsSimulator.getBestNewBodyPosition(neighbors);
-      }
-
-      body = physicsSimulator.addBodyAt(pos);
-
-      nodeBodies[nodeId] = body;
-      updateBodyMass(nodeId);
-
-      if (isNodeOriginallyPinned(node)) {
-        body.isPinned = true;
-      }
-    }
-  }
-
-  function releaseNode(node) {
-    var nodeId = node.id;
-    var body = nodeBodies[nodeId];
-    if (body) {
-      nodeBodies[nodeId] = null;
-      delete nodeBodies[nodeId];
-
-      physicsSimulator.removeBody(body);
-    }
-  }
-
-  function initLink(link) {
-    updateBodyMass(link.fromId);
-    updateBodyMass(link.toId);
-
-    var fromBody = nodeBodies[link.fromId],
-        toBody  = nodeBodies[link.toId],
-        spring = physicsSimulator.addSpring(fromBody, toBody, link.length);
-
-    springTransform(link, spring);
-
-    springs[link.id] = spring;
-  }
-
-  function releaseLink(link) {
-    var spring = springs[link.id];
-    if (spring) {
-      var from = graph.getNode(link.fromId),
-          to = graph.getNode(link.toId);
-
-      if (from) updateBodyMass(from.id);
-      if (to) updateBodyMass(to.id);
-
-      delete springs[link.id];
-
-      physicsSimulator.removeSpring(spring);
-    }
-  }
-
-  function getNeighborBodies(node) {
-    // TODO: Could probably be done better on memory
-    var neighbors = [];
-    if (!node.links) {
-      return neighbors;
-    }
-    var maxNeighbors = Math.min(node.links.length, 2);
-    for (var i = 0; i < maxNeighbors; ++i) {
-      var link = node.links[i];
-      var otherBody = link.fromId !== node.id ? nodeBodies[link.fromId] : nodeBodies[link.toId];
-      if (otherBody && otherBody.pos) {
-        neighbors.push(otherBody);
-      }
-    }
-
-    return neighbors;
-  }
-
-  function updateBodyMass(nodeId) {
-    var body = nodeBodies[nodeId];
-    body.mass = nodeMass(nodeId);
-  }
-
-  /**
-   * Checks whether graph node has in its settings pinned attribute,
-   * which means layout algorithm cannot move it. Node can be preconfigured
-   * as pinned, if it has "isPinned" attribute, or when node.data has it.
-   *
-   * @param {Object} node a graph node to check
-   * @return {Boolean} true if node should be treated as pinned; false otherwise.
-   */
-  function isNodeOriginallyPinned(node) {
-    return (node && (node.isPinned || (node.data && node.data.isPinned)));
-  }
-
-  function getInitializedBody(nodeId) {
-    var body = nodeBodies[nodeId];
-    if (!body) {
-      initBody(nodeId);
-      body = nodeBodies[nodeId];
-    }
-    return body;
-  }
-
-  /**
-   * Calculates mass of a body, which corresponds to node with given id.
-   *
-   * @param {String|Number} nodeId identifier of a node, for which body mass needs to be calculated
-   * @returns {Number} recommended mass of the body;
-   */
-  function nodeMass(nodeId) {
-    return 1 + graph.getLinks(nodeId).length / 3.0;
-  }
-}
-
-function noop() { }
-
-},{"ngraph.physics.simulator":51}],51:[function(require,module,exports){
-/**
- * Manages a simulation of physical forces acting on bodies and springs.
- */
-module.exports = physicsSimulator;
-
-function physicsSimulator(settings) {
-  var Spring = require('./lib/spring');
-  var expose = require('ngraph.expose');
-  var merge = require('ngraph.merge');
-
-  settings = merge(settings, {
-      /**
-       * Ideal length for links (springs in physical model).
-       */
-      springLength: 30,
-
-      /**
-       * Hook's law coefficient. 1 - solid spring.
-       */
-      springCoeff: 0.0008,
-
-      /**
-       * Coulomb's law coefficient. It's used to repel nodes thus should be negative
-       * if you make it positive nodes start attract each other :).
-       */
-      gravity: -1.2,
-
-      /**
-       * Theta coefficient from Barnes Hut simulation. Ranged between (0, 1).
-       * The closer it's to 1 the more nodes algorithm will have to go through.
-       * Setting it to one makes Barnes Hut simulation no different from
-       * brute-force forces calculation (each node is considered).
-       */
-      theta: 0.8,
-
-      /**
-       * Drag force coefficient. Used to slow down system, thus should be less than 1.
-       * The closer it is to 0 the less tight system will be.
-       */
-      dragCoeff: 0.02,
-
-      /**
-       * Default time step (dt) for forces integration
-       */
-      timeStep : 20,
-
-      /**
-        * Maximum movement of the system which can be considered as stabilized
-        */
-      stableThreshold: 0.009
-  });
-
-  // We allow clients to override basic factory methods:
-  var createQuadTree = settings.createQuadTree || require('ngraph.quadtreebh');
-  var createBounds = settings.createBounds || require('./lib/bounds');
-  var createDragForce = settings.createDragForce || require('./lib/dragForce');
-  var createSpringForce = settings.createSpringForce || require('./lib/springForce');
-  var integrate = settings.integrator || require('./lib/eulerIntegrator');
-  var createBody = settings.createBody || require('./lib/createBody');
-
-  var bodies = [], // Bodies in this simulation.
-      springs = [], // Springs in this simulation.
-      quadTree =  createQuadTree(settings),
-      bounds = createBounds(bodies, settings),
-      springForce = createSpringForce(settings),
-      dragForce = createDragForce(settings);
-
-  var publicApi = {
-    /**
-     * Array of bodies, registered with current simulator
-     *
-     * Note: To add new body, use addBody() method. This property is only
-     * exposed for testing/performance purposes.
-     */
-    bodies: bodies,
-
-    /**
-     * Array of springs, registered with current simulator
-     *
-     * Note: To add new spring, use addSpring() method. This property is only
-     * exposed for testing/performance purposes.
-     */
-    springs: springs,
-
-    /**
-     * Returns settings with which current simulator was initialized
-     */
-    settings: settings,
-
-    /**
-     * Performs one step of force simulation.
-     *
-     * @returns {boolean} true if system is considered stable; False otherwise.
-     */
-    step: function () {
-      accumulateForces();
-      var totalMovement = integrate(bodies, settings.timeStep);
-
-      bounds.update();
-
-      return totalMovement < settings.stableThreshold;
-    },
-
-    /**
-     * Adds body to the system
-     *
-     * @param {ngraph.physics.primitives.Body} body physical body
-     *
-     * @returns {ngraph.physics.primitives.Body} added body
-     */
-    addBody: function (body) {
-      if (!body) {
-        throw new Error('Body is required');
-      }
-      bodies.push(body);
-
-      return body;
-    },
-
-    /**
-     * Adds body to the system at given position
-     *
-     * @param {Object} pos position of a body
-     *
-     * @returns {ngraph.physics.primitives.Body} added body
-     */
-    addBodyAt: function (pos) {
-      if (!pos) {
-        throw new Error('Body position is required');
-      }
-      var body = createBody(pos);
-      bodies.push(body);
-
-      return body;
-    },
-
-    /**
-     * Removes body from the system
-     *
-     * @param {ngraph.physics.primitives.Body} body to remove
-     *
-     * @returns {Boolean} true if body found and removed. falsy otherwise;
-     */
-    removeBody: function (body) {
-      if (!body) { return; }
-
-      var idx = bodies.indexOf(body);
-      if (idx < 0) { return; }
-
-      bodies.splice(idx, 1);
-      if (bodies.length === 0) {
-        bounds.reset();
-      }
-      return true;
-    },
-
-    /**
-     * Adds a spring to this simulation.
-     *
-     * @returns {Object} - a handle for a spring. If you want to later remove
-     * spring pass it to removeSpring() method.
-     */
-    addSpring: function (body1, body2, springLength, springWeight, springCoefficient) {
-      if (!body1 || !body2) {
-        throw new Error('Cannot add null spring to force simulator');
-      }
-
-      if (typeof springLength !== 'number') {
-        springLength = -1; // assume global configuration
-      }
-
-      var spring = new Spring(body1, body2, springLength, springCoefficient >= 0 ? springCoefficient : -1, springWeight);
-      springs.push(spring);
-
-      // TODO: could mark simulator as dirty.
-      return spring;
-    },
-
-    /**
-     * Removes spring from the system
-     *
-     * @param {Object} spring to remove. Spring is an object returned by addSpring
-     *
-     * @returns {Boolean} true if spring found and removed. falsy otherwise;
-     */
-    removeSpring: function (spring) {
-      if (!spring) { return; }
-      var idx = springs.indexOf(spring);
-      if (idx > -1) {
-        springs.splice(idx, 1);
-        return true;
-      }
-    },
-
-    getBestNewBodyPosition: function (neighbors) {
-      return bounds.getBestNewPosition(neighbors);
-    },
-
-    /**
-     * Returns bounding box which covers all bodies
-     */
-    getBBox: function () {
-      return bounds.box;
-    },
-
-    gravity: function (value) {
-      if (value !== undefined) {
-        settings.gravity = value;
-        quadTree.options({gravity: value});
-        return this;
-      } else {
-        return settings.gravity;
-      }
-    },
-
-    theta: function (value) {
-      if (value !== undefined) {
-        settings.theta = value;
-        quadTree.options({theta: value});
-        return this;
-      } else {
-        return settings.theta;
-      }
-    }
-  };
-
-  // allow settings modification via public API:
-  expose(settings, publicApi);
-
-  return publicApi;
-
-  function accumulateForces() {
-    // Accumulate forces acting on bodies.
-    var body,
-        i = bodies.length;
-
-    if (i) {
-      // only add bodies if there the array is not empty:
-      quadTree.insertBodies(bodies); // performance: O(n * log n)
-      while (i--) {
-        body = bodies[i];
-        body.force.reset();
-
-        quadTree.updateBodyForce(body);
-        dragForce.update(body);
-      }
-    }
-
-    i = springs.length;
-    while(i--) {
-      springForce.update(springs[i]);
-    }
-  }
-};
-
-},{"./lib/bounds":52,"./lib/createBody":53,"./lib/dragForce":54,"./lib/eulerIntegrator":55,"./lib/spring":56,"./lib/springForce":57,"ngraph.expose":49,"ngraph.merge":62,"ngraph.quadtreebh":58}],52:[function(require,module,exports){
-module.exports = function (bodies, settings) {
-  var random = require('ngraph.random').random(42);
-  var boundingBox =  { x1: 0, y1: 0, x2: 0, y2: 0 };
-
-  return {
-    box: boundingBox,
-
-    update: updateBoundingBox,
-
-    reset : function () {
-      boundingBox.x1 = boundingBox.y1 = 0;
-      boundingBox.x2 = boundingBox.y2 = 0;
-    },
-
-    getBestNewPosition: function (neighbors) {
-      var graphRect = boundingBox;
-
-      var baseX = 0, baseY = 0;
-
-      if (neighbors.length) {
-        for (var i = 0; i < neighbors.length; ++i) {
-          baseX += neighbors[i].pos.x;
-          baseY += neighbors[i].pos.y;
-        }
-
-        baseX /= neighbors.length;
-        baseY /= neighbors.length;
-      } else {
-        baseX = (graphRect.x1 + graphRect.x2) / 2;
-        baseY = (graphRect.y1 + graphRect.y2) / 2;
-      }
-
-      var springLength = settings.springLength;
-      return {
-        x: baseX + random.next(springLength) - springLength / 2,
-        y: baseY + random.next(springLength) - springLength / 2
-      };
-    }
-  };
-
-  function updateBoundingBox() {
-    var i = bodies.length;
-    if (i === 0) { return; } // don't have to wory here.
-
-    var x1 = Number.MAX_VALUE,
-        y1 = Number.MAX_VALUE,
-        x2 = Number.MIN_VALUE,
-        y2 = Number.MIN_VALUE;
-
-    while(i--) {
-      // this is O(n), could it be done faster with quadtree?
-      // how about pinned nodes?
-      var body = bodies[i];
-      if (body.isPinned) {
-        body.pos.x = body.prevPos.x;
-        body.pos.y = body.prevPos.y;
-      } else {
-        body.prevPos.x = body.pos.x;
-        body.prevPos.y = body.pos.y;
-      }
-      if (body.pos.x < x1) {
-        x1 = body.pos.x;
-      }
-      if (body.pos.x > x2) {
-        x2 = body.pos.x;
-      }
-      if (body.pos.y < y1) {
-        y1 = body.pos.y;
-      }
-      if (body.pos.y > y2) {
-        y2 = body.pos.y;
-      }
-    }
-
-    boundingBox.x1 = x1;
-    boundingBox.x2 = x2;
-    boundingBox.y1 = y1;
-    boundingBox.y2 = y2;
-  }
-}
-
-},{"ngraph.random":68}],53:[function(require,module,exports){
-var physics = require('ngraph.physics.primitives');
-
-module.exports = function(pos) {
-  return new physics.Body(pos);
-}
-
-},{"ngraph.physics.primitives":63}],54:[function(require,module,exports){
-/**
- * Represents drag force, which reduces force value on each step by given
- * coefficient.
- *
- * @param {Object} options for the drag force
- * @param {Number=} options.dragCoeff drag force coefficient. 0.1 by default
- */
-module.exports = function (options) {
-  var merge = require('ngraph.merge'),
-      expose = require('ngraph.expose');
-
-  options = merge(options, {
-    dragCoeff: 0.02
-  });
-
-  var api = {
-    update : function (body) {
-      body.force.x -= options.dragCoeff * body.velocity.x;
-      body.force.y -= options.dragCoeff * body.velocity.y;
-    }
-  };
-
-  // let easy access to dragCoeff:
-  expose(options, api, ['dragCoeff']);
-
-  return api;
-};
-
-},{"ngraph.expose":49,"ngraph.merge":62}],55:[function(require,module,exports){
-/**
- * Performs forces integration, using given timestep. Uses Euler method to solve
- * differential equation (http://en.wikipedia.org/wiki/Euler_method ).
- *
- * @returns {Number} squared distance of total position updates.
- */
-
-module.exports = integrate;
-
-function integrate(bodies, timeStep) {
-  var dx = 0, tx = 0,
-      dy = 0, ty = 0,
-      i,
-      max = bodies.length;
-
-  for (i = 0; i < max; ++i) {
-    var body = bodies[i],
-        coeff = timeStep / body.mass;
-
-    body.velocity.x += coeff * body.force.x;
-    body.velocity.y += coeff * body.force.y;
-    var vx = body.velocity.x,
-        vy = body.velocity.y,
-        v = Math.sqrt(vx * vx + vy * vy);
-
-    if (v > 1) {
-      body.velocity.x = vx / v;
-      body.velocity.y = vy / v;
-    }
-
-    dx = timeStep * body.velocity.x;
-    dy = timeStep * body.velocity.y;
-
-    body.pos.x += dx;
-    body.pos.y += dy;
-
-    tx += Math.abs(dx); ty += Math.abs(dy);
-  }
-
-  return (tx * tx + ty * ty)/bodies.length;
-}
-
-},{}],56:[function(require,module,exports){
-module.exports = Spring;
-
-/**
- * Represents a physical spring. Spring connects two bodies, has rest length
- * stiffness coefficient and optional weight
- */
-function Spring(fromBody, toBody, length, coeff, weight) {
-    this.from = fromBody;
-    this.to = toBody;
-    this.length = length;
-    this.coeff = coeff;
-
-    this.weight = typeof weight === 'number' ? weight : 1;
-};
-
-},{}],57:[function(require,module,exports){
-/**
- * Represents spring force, which updates forces acting on two bodies, conntected
- * by a spring.
- *
- * @param {Object} options for the spring force
- * @param {Number=} options.springCoeff spring force coefficient.
- * @param {Number=} options.springLength desired length of a spring at rest.
- */
-module.exports = function (options) {
-  var merge = require('ngraph.merge');
-  var random = require('ngraph.random').random(42);
-  var expose = require('ngraph.expose');
-
-  options = merge(options, {
-    springCoeff: 0.0002,
-    springLength: 80
-  });
-
-  var api = {
-    /**
-     * Upsates forces acting on a spring
-     */
-    update : function (spring) {
-      var body1 = spring.from,
-          body2 = spring.to,
-          length = spring.length < 0 ? options.springLength : spring.length,
-          dx = body2.pos.x - body1.pos.x,
-          dy = body2.pos.y - body1.pos.y,
-          r = Math.sqrt(dx * dx + dy * dy);
-
-      if (r === 0) {
-          dx = (random.nextDouble() - 0.5) / 50;
-          dy = (random.nextDouble() - 0.5) / 50;
-          r = Math.sqrt(dx * dx + dy * dy);
-      }
-
-      var d = r - length;
-      var coeff = ((!spring.coeff || spring.coeff < 0) ? options.springCoeff : spring.coeff) * d / r * spring.weight;
-
-      body1.force.x += coeff * dx;
-      body1.force.y += coeff * dy;
-
-      body2.force.x -= coeff * dx;
-      body2.force.y -= coeff * dy;
-    }
-  };
-
-  expose(options, api, ['springCoeff', 'springLength']);
-  return api;
-}
-
-},{"ngraph.expose":49,"ngraph.merge":62,"ngraph.random":68}],58:[function(require,module,exports){
-/**
- * This is Barnes Hut simulation algorithm for 2d case. Implementation
- * is highly optimized (avoids recusion and gc pressure)
- *
- * http://www.cs.princeton.edu/courses/archive/fall03/cs126/assignments/barnes-hut.html
- */
-
-module.exports = function(options) {
-  options = options || {};
-  options.gravity = typeof options.gravity === 'number' ? options.gravity : -1;
-  options.theta = typeof options.theta === 'number' ? options.theta : 0.8;
-
-  // we require deterministic randomness here
-  var random = require('ngraph.random').random(1984),
-    Node = require('./node'),
-    InsertStack = require('./insertStack'),
-    isSamePosition = require('./isSamePosition');
-
-  var gravity = options.gravity,
-    updateQueue = [],
-    insertStack = new InsertStack(),
-    theta = options.theta,
-
-    nodesCache = [],
-    currentInCache = 0,
-    newNode = function() {
-      // To avoid pressure on GC we reuse nodes.
-      var node = nodesCache[currentInCache];
-      if (node) {
-        node.quad0 = null;
-        node.quad1 = null;
-        node.quad2 = null;
-        node.quad3 = null;
-        node.body = null;
-        node.mass = node.massX = node.massY = 0;
-        node.left = node.right = node.top = node.bottom = 0;
-      } else {
-        node = new Node();
-        nodesCache[currentInCache] = node;
-      }
-
-      ++currentInCache;
-      return node;
-    },
-
-    root = newNode(),
-
-    // Inserts body to the tree
-    insert = function(newBody) {
-      insertStack.reset();
-      insertStack.push(root, newBody);
-
-      while (!insertStack.isEmpty()) {
-        var stackItem = insertStack.pop(),
-          node = stackItem.node,
-          body = stackItem.body;
-
-        if (!node.body) {
-          // This is internal node. Update the total mass of the node and center-of-mass.
-          var x = body.pos.x;
-          var y = body.pos.y;
-          node.mass = node.mass + body.mass;
-          node.massX = node.massX + body.mass * x;
-          node.massY = node.massY + body.mass * y;
-
-          // Recursively insert the body in the appropriate quadrant.
-          // But first find the appropriate quadrant.
-          var quadIdx = 0, // Assume we are in the 0's quad.
-            left = node.left,
-            right = (node.right + left) / 2,
-            top = node.top,
-            bottom = (node.bottom + top) / 2;
-
-          if (x > right) { // somewhere in the eastern part.
-            quadIdx = quadIdx + 1;
-            var oldLeft = left;
-            left = right;
-            right = right + (right - oldLeft);
-          }
-          if (y > bottom) { // and in south.
-            quadIdx = quadIdx + 2;
-            var oldTop = top;
-            top = bottom;
-            bottom = bottom + (bottom - oldTop);
-          }
-
-          var child = getChild(node, quadIdx);
-          if (!child) {
-            // The node is internal but this quadrant is not taken. Add
-            // subnode to it.
-            child = newNode();
-            child.left = left;
-            child.top = top;
-            child.right = right;
-            child.bottom = bottom;
-            child.body = body;
-
-            setChild(node, quadIdx, child);
-          } else {
-            // continue searching in this quadrant.
-            insertStack.push(child, body);
-          }
-        } else {
-          // We are trying to add to the leaf node.
-          // We have to convert current leaf into internal node
-          // and continue adding two nodes.
-          var oldBody = node.body;
-          node.body = null; // internal nodes do not cary bodies
-
-          if (isSamePosition(oldBody.pos, body.pos)) {
-            // Prevent infinite subdivision by bumping one node
-            // anywhere in this quadrant
-            var retriesCount = 3;
-            do {
-              var offset = random.nextDouble();
-              var dx = (node.right - node.left) * offset;
-              var dy = (node.bottom - node.top) * offset;
-
-              oldBody.pos.x = node.left + dx;
-              oldBody.pos.y = node.top + dy;
-              retriesCount -= 1;
-              // Make sure we don't bump it out of the box. If we do, next iteration should fix it
-            } while (retriesCount > 0 && isSamePosition(oldBody.pos, body.pos));
-
-            if (retriesCount === 0 && isSamePosition(oldBody.pos, body.pos)) {
-              // This is very bad, we ran out of precision.
-              // if we do not return from the method we'll get into
-              // infinite loop here. So we sacrifice correctness of layout, and keep the app running
-              // Next layout iteration should get larger bounding box in the first step and fix this
-              return;
-            }
-          }
-          // Next iteration should subdivide node further.
-          insertStack.push(node, oldBody);
-          insertStack.push(node, body);
-        }
-      }
-    },
-
-    update = function(sourceBody) {
-      var queue = updateQueue,
-        v,
-        dx,
-        dy,
-        r, fx = 0,
-        fy = 0,
-        queueLength = 1,
-        shiftIdx = 0,
-        pushIdx = 1;
-
-      queue[0] = root;
-
-      while (queueLength) {
-        var node = queue[shiftIdx],
-          body = node.body;
-
-        queueLength -= 1;
-        shiftIdx += 1;
-        var differentBody = (body !== sourceBody);
-        if (body && differentBody) {
-          // If the current node is a leaf node (and it is not source body),
-          // calculate the force exerted by the current node on body, and add this
-          // amount to body's net force.
-          dx = body.pos.x - sourceBody.pos.x;
-          dy = body.pos.y - sourceBody.pos.y;
-          r = Math.sqrt(dx * dx + dy * dy);
-
-          if (r === 0) {
-            // Poor man's protection against zero distance.
-            dx = (random.nextDouble() - 0.5) / 50;
-            dy = (random.nextDouble() - 0.5) / 50;
-            r = Math.sqrt(dx * dx + dy * dy);
-          }
-
-          // This is standard gravition force calculation but we divide
-          // by r^3 to save two operations when normalizing force vector.
-          v = gravity * body.mass * sourceBody.mass / (r * r * r);
-          fx += v * dx;
-          fy += v * dy;
-        } else if (differentBody) {
-          // Otherwise, calculate the ratio s / r,  where s is the width of the region
-          // represented by the internal node, and r is the distance between the body
-          // and the node's center-of-mass
-          dx = node.massX / node.mass - sourceBody.pos.x;
-          dy = node.massY / node.mass - sourceBody.pos.y;
-          r = Math.sqrt(dx * dx + dy * dy);
-
-          if (r === 0) {
-            // Sorry about code duplucation. I don't want to create many functions
-            // right away. Just want to see performance first.
-            dx = (random.nextDouble() - 0.5) / 50;
-            dy = (random.nextDouble() - 0.5) / 50;
-            r = Math.sqrt(dx * dx + dy * dy);
-          }
-          // If s / r < θ, treat this internal node as a single body, and calculate the
-          // force it exerts on sourceBody, and add this amount to sourceBody's net force.
-          if ((node.right - node.left) / r < theta) {
-            // in the if statement above we consider node's width only
-            // because the region was squarified during tree creation.
-            // Thus there is no difference between using width or height.
-            v = gravity * node.mass * sourceBody.mass / (r * r * r);
-            fx += v * dx;
-            fy += v * dy;
-          } else {
-            // Otherwise, run the procedure recursively on each of the current node's children.
-
-            // I intentionally unfolded this loop, to save several CPU cycles.
-            if (node.quad0) {
-              queue[pushIdx] = node.quad0;
-              queueLength += 1;
-              pushIdx += 1;
-            }
-            if (node.quad1) {
-              queue[pushIdx] = node.quad1;
-              queueLength += 1;
-              pushIdx += 1;
-            }
-            if (node.quad2) {
-              queue[pushIdx] = node.quad2;
-              queueLength += 1;
-              pushIdx += 1;
-            }
-            if (node.quad3) {
-              queue[pushIdx] = node.quad3;
-              queueLength += 1;
-              pushIdx += 1;
-            }
-          }
-        }
-      }
-
-      sourceBody.force.x += fx;
-      sourceBody.force.y += fy;
-    },
-
-    insertBodies = function(bodies) {
-      var x1 = Number.MAX_VALUE,
-        y1 = Number.MAX_VALUE,
-        x2 = Number.MIN_VALUE,
-        y2 = Number.MIN_VALUE,
-        i,
-        max = bodies.length;
-
-      // To reduce quad tree depth we are looking for exact bounding box of all particles.
-      i = max;
-      while (i--) {
-        var x = bodies[i].pos.x;
-        var y = bodies[i].pos.y;
-        if (x < x1) {
-          x1 = x;
-        }
-        if (x > x2) {
-          x2 = x;
-        }
-        if (y < y1) {
-          y1 = y;
-        }
-        if (y > y2) {
-          y2 = y;
-        }
-      }
-
-      // Squarify the bounds.
-      var dx = x2 - x1,
-        dy = y2 - y1;
-      if (dx > dy) {
-        y2 = y1 + dx;
-      } else {
-        x2 = x1 + dy;
-      }
-
-      currentInCache = 0;
-      root = newNode();
-      root.left = x1;
-      root.right = x2;
-      root.top = y1;
-      root.bottom = y2;
-
-      i = max - 1;
-      if (i > 0) {
-        root.body = bodies[i];
-      }
-      while (i--) {
-        insert(bodies[i], root);
-      }
-    };
-
-  return {
-    insertBodies: insertBodies,
-    updateBodyForce: update,
-    options: function(newOptions) {
-      if (newOptions) {
-        if (typeof newOptions.gravity === 'number') {
-          gravity = newOptions.gravity;
-        }
-        if (typeof newOptions.theta === 'number') {
-          theta = newOptions.theta;
-        }
-
-        return this;
-      }
-
-      return {
-        gravity: gravity,
-        theta: theta
-      };
-    }
-  };
-};
-
-function getChild(node, idx) {
-  if (idx === 0) return node.quad0;
-  if (idx === 1) return node.quad1;
-  if (idx === 2) return node.quad2;
-  if (idx === 3) return node.quad3;
-  return null;
-}
-
-function setChild(node, idx, child) {
-  if (idx === 0) node.quad0 = child;
-  else if (idx === 1) node.quad1 = child;
-  else if (idx === 2) node.quad2 = child;
-  else if (idx === 3) node.quad3 = child;
-}
-
-},{"./insertStack":59,"./isSamePosition":60,"./node":61,"ngraph.random":68}],59:[function(require,module,exports){
-module.exports = InsertStack;
-
-/**
- * Our implmentation of QuadTree is non-recursive to avoid GC hit
- * This data structure represent stack of elements
- * which we are trying to insert into quad tree.
- */
-function InsertStack () {
-    this.stack = [];
-    this.popIdx = 0;
-}
-
-InsertStack.prototype = {
-    isEmpty: function() {
-        return this.popIdx === 0;
-    },
-    push: function (node, body) {
-        var item = this.stack[this.popIdx];
-        if (!item) {
-            // we are trying to avoid memory pressue: create new element
-            // only when absolutely necessary
-            this.stack[this.popIdx] = new InsertStackElement(node, body);
-        } else {
-            item.node = node;
-            item.body = body;
-        }
-        ++this.popIdx;
-    },
-    pop: function () {
-        if (this.popIdx > 0) {
-            return this.stack[--this.popIdx];
-        }
-    },
-    reset: function () {
-        this.popIdx = 0;
-    }
-};
-
-function InsertStackElement(node, body) {
-    this.node = node; // QuadTree node
-    this.body = body; // physical body which needs to be inserted to node
-}
-
-},{}],60:[function(require,module,exports){
-module.exports = function isSamePosition(point1, point2) {
-    var dx = Math.abs(point1.x - point2.x);
-    var dy = Math.abs(point1.y - point2.y);
-
-    return (dx < 1e-8 && dy < 1e-8);
-};
-
-},{}],61:[function(require,module,exports){
-/**
- * Internal data structure to represent 2D QuadTree node
- */
-module.exports = function Node() {
-  // body stored inside this node. In quad tree only leaf nodes (by construction)
-  // contain boides:
-  this.body = null;
-
-  // Child nodes are stored in quads. Each quad is presented by number:
-  // 0 | 1
-  // -----
-  // 2 | 3
-  this.quad0 = null;
-  this.quad1 = null;
-  this.quad2 = null;
-  this.quad3 = null;
-
-  // Total mass of current node
-  this.mass = 0;
-
-  // Center of mass coordinates
-  this.massX = 0;
-  this.massY = 0;
-
-  // bounding box coordinates
-  this.left = 0;
-  this.top = 0;
-  this.bottom = 0;
-  this.right = 0;
-};
-
-},{}],62:[function(require,module,exports){
-module.exports = merge;
-
-/**
- * Augments `target` with properties in `options`. Does not override
- * target's properties if they are defined and matches expected type in 
- * options
- *
- * @returns {Object} merged object
- */
-function merge(target, options) {
-  var key;
-  if (!target) { target = {}; }
-  if (options) {
-    for (key in options) {
-      if (options.hasOwnProperty(key)) {
-        var targetHasIt = target.hasOwnProperty(key),
-            optionsValueType = typeof options[key],
-            shouldReplace = !targetHasIt || (typeof target[key] !== optionsValueType);
-
-        if (shouldReplace) {
-          target[key] = options[key];
-        } else if (optionsValueType === 'object') {
-          // go deep, don't care about loops here, we are simple API!:
-          target[key] = merge(target[key], options[key]);
-        }
-      }
-    }
-  }
-
-  return target;
-}
-
-},{}],63:[function(require,module,exports){
-module.exports = {
-  Body: Body,
-  Vector2d: Vector2d,
-  Body3d: Body3d,
-  Vector3d: Vector3d
-};
-
-function Body(x, y) {
-  this.pos = new Vector2d(x, y);
-  this.prevPos = new Vector2d(x, y);
-  this.force = new Vector2d();
-  this.velocity = new Vector2d();
-  this.mass = 1;
-}
-
-Body.prototype.setPosition = function (x, y) {
-  this.prevPos.x = this.pos.x = x;
-  this.prevPos.y = this.pos.y = y;
-};
-
-function Vector2d(x, y) {
-  if (x && typeof x !== 'number') {
-    // could be another vector
-    this.x = typeof x.x === 'number' ? x.x : 0;
-    this.y = typeof x.y === 'number' ? x.y : 0;
-  } else {
-    this.x = typeof x === 'number' ? x : 0;
-    this.y = typeof y === 'number' ? y : 0;
-  }
-}
-
-Vector2d.prototype.reset = function () {
-  this.x = this.y = 0;
-};
-
-function Body3d(x, y, z) {
-  this.pos = new Vector3d(x, y, z);
-  this.prevPos = new Vector3d(x, y, z);
-  this.force = new Vector3d();
-  this.velocity = new Vector3d();
-  this.mass = 1;
-}
-
-Body3d.prototype.setPosition = function (x, y, z) {
-  this.prevPos.x = this.pos.x = x;
-  this.prevPos.y = this.pos.y = y;
-  this.prevPos.z = this.pos.z = z;
-};
-
-function Vector3d(x, y, z) {
-  if (x && typeof x !== 'number') {
-    // could be another vector
-    this.x = typeof x.x === 'number' ? x.x : 0;
-    this.y = typeof x.y === 'number' ? x.y : 0;
-    this.z = typeof x.z === 'number' ? x.z : 0;
-  } else {
-    this.x = typeof x === 'number' ? x : 0;
-    this.y = typeof y === 'number' ? y : 0;
-    this.z = typeof z === 'number' ? z : 0;
-  }
-};
-
-Vector3d.prototype.reset = function () {
-  this.x = this.y = this.z = 0;
-};
-
-},{}],64:[function(require,module,exports){
-/**
- * This is Barnes Hut simulation algorithm for 3d case. Implementation
- * is highly optimized (avoids recusion and gc pressure)
- *
- * http://www.cs.princeton.edu/courses/archive/fall03/cs126/assignments/barnes-hut.html
- *
- * NOTE: This module duplicates a lot of code from 2d case. Primary reason for
- * this is performance. Every time I tried to abstract away vector operations
- * I had negative impact on performance. So in this case I'm scarifying code
- * reuse in favor of speed
- */
-
-module.exports = function(options) {
-  options = options || {};
-  options.gravity = typeof options.gravity === 'number' ? options.gravity : -1;
-  options.theta = typeof options.theta === 'number' ? options.theta : 0.8;
-
-  // we require deterministic randomness here
-  var random = require('ngraph.random').random(1984),
-    Node = require('./node'),
-    InsertStack = require('./insertStack'),
-    isSamePosition = require('./isSamePosition');
-
-  var gravity = options.gravity,
-    updateQueue = [],
-    insertStack = new InsertStack(),
-    theta = options.theta,
-
-    nodesCache = [],
-    currentInCache = 0,
-    newNode = function() {
-      // To avoid pressure on GC we reuse nodes.
-      var node = nodesCache[currentInCache];
-      if (node) {
-        node.quad0 = null;
-        node.quad4 = null;
-        node.quad1 = null;
-        node.quad5 = null;
-        node.quad2 = null;
-        node.quad6 = null;
-        node.quad3 = null;
-        node.quad7 = null;
-        node.body = null;
-        node.mass = node.massX = node.massY = node.massZ = 0;
-        node.left = node.right = node.top = node.bottom = node.front = node.back = 0;
-      } else {
-        node = new Node();
-        nodesCache[currentInCache] = node;
-      }
-
-      ++currentInCache;
-      return node;
-    },
-
-    root = newNode(),
-
-    // Inserts body to the tree
-    insert = function(newBody) {
-      insertStack.reset();
-      insertStack.push(root, newBody);
-
-      while (!insertStack.isEmpty()) {
-        var stackItem = insertStack.pop(),
-          node = stackItem.node,
-          body = stackItem.body;
-
-        if (!node.body) {
-          // This is internal node. Update the total mass of the node and center-of-mass.
-          var x = body.pos.x;
-          var y = body.pos.y;
-          var z = body.pos.z;
-          node.mass += body.mass;
-          node.massX += body.mass * x;
-          node.massY += body.mass * y;
-          node.massZ += body.mass * z;
-
-          // Recursively insert the body in the appropriate quadrant.
-          // But first find the appropriate quadrant.
-          var quadIdx = 0, // Assume we are in the 0's quad.
-            left = node.left,
-            right = (node.right + left) / 2,
-            top = node.top,
-            bottom = (node.bottom + top) / 2,
-            back = node.back,
-            front = (node.front + back) / 2;
-
-          if (x > right) { // somewhere in the eastern part.
-            quadIdx += 1;
-            var oldLeft = left;
-            left = right;
-            right = right + (right - oldLeft);
-          }
-          if (y > bottom) { // and in south.
-            quadIdx += 2;
-            var oldTop = top;
-            top = bottom;
-            bottom = bottom + (bottom - oldTop);
-          }
-          if (z > front) { // and in frontal part
-            quadIdx += 4;
-            var oldBack = back;
-            back = front;
-            front = back + (back - oldBack);
-          }
-
-          var child = getChild(node, quadIdx);
-          if (!child) {
-            // The node is internal but this quadrant is not taken. Add subnode to it.
-            child = newNode();
-            child.left = left;
-            child.top = top;
-            child.right = right;
-            child.bottom = bottom;
-            child.back = back;
-            child.front = front;
-            child.body = body;
-
-            setChild(node, quadIdx, child);
-          } else {
-            // continue searching in this quadrant.
-            insertStack.push(child, body);
-          }
-        } else {
-          // We are trying to add to the leaf node.
-          // We have to convert current leaf into internal node
-          // and continue adding two nodes.
-          var oldBody = node.body;
-          node.body = null; // internal nodes do not carry bodies
-
-          if (isSamePosition(oldBody.pos, body.pos)) {
-            // Prevent infinite subdivision by bumping one node
-            // anywhere in this quadrant
-            var retriesCount = 3;
-            do {
-              var offset = random.nextDouble();
-              var dx = (node.right - node.left) * offset;
-              var dy = (node.bottom - node.top) * offset;
-              var dz = (node.front - node.back) * offset;
-
-              oldBody.pos.x = node.left + dx;
-              oldBody.pos.y = node.top + dy;
-              oldBody.pos.z = node.back + dz;
-              retriesCount -= 1;
-              // Make sure we don't bump it out of the box. If we do, next iteration should fix it
-            } while (retriesCount > 0 && isSamePosition(oldBody.pos, body.pos));
-
-            if (retriesCount === 0 && isSamePosition(oldBody.pos, body.pos)) {
-              // This is very bad, we ran out of precision.
-              // if we do not return from the method we'll get into
-              // infinite loop here. So we sacrifice correctness of layout, and keep the app running
-              // Next layout iteration should get larger bounding box in the first step and fix this
-              return;
-            }
-          }
-          // Next iteration should subdivide node further.
-          insertStack.push(node, oldBody);
-          insertStack.push(node, body);
-        }
-      }
-    },
-
-    update = function(sourceBody) {
-      var queue = updateQueue,
-        v,
-        dx, dy, dz,
-        r, fx = 0,
-        fy = 0,
-        fz = 0,
-        queueLength = 1,
-        shiftIdx = 0,
-        pushIdx = 1;
-
-      queue[0] = root;
-
-      while (queueLength) {
-        var node = queue[shiftIdx],
-          body = node.body;
-
-        queueLength -= 1;
-        shiftIdx += 1;
-        var differentBody = (body !== sourceBody);
-        if (body && differentBody) {
-          // If the current node is a leaf node (and it is not source body),
-          // calculate the force exerted by the current node on body, and add this
-          // amount to body's net force.
-          dx = body.pos.x - sourceBody.pos.x;
-          dy = body.pos.y - sourceBody.pos.y;
-          dz = body.pos.z - sourceBody.pos.z;
-          r = Math.sqrt(dx * dx + dy * dy + dz * dz);
-
-          if (r === 0) {
-            // Poor man's protection against zero distance.
-            dx = (random.nextDouble() - 0.5) / 50;
-            dy = (random.nextDouble() - 0.5) / 50;
-            dz = (random.nextDouble() - 0.5) / 50;
-            r = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          }
-
-          // This is standard gravitation force calculation but we divide
-          // by r^3 to save two operations when normalizing force vector.
-          v = gravity * body.mass * sourceBody.mass / (r * r * r);
-          fx += v * dx;
-          fy += v * dy;
-          fz += v * dz;
-        } else if (differentBody) {
-          // Otherwise, calculate the ratio s / r,  where s is the width of the region
-          // represented by the internal node, and r is the distance between the body
-          // and the node's center-of-mass
-          dx = node.massX / node.mass - sourceBody.pos.x;
-          dy = node.massY / node.mass - sourceBody.pos.y;
-          dz = node.massZ / node.mass - sourceBody.pos.z;
-
-          r = Math.sqrt(dx * dx + dy * dy + dz * dz);
-
-          if (r === 0) {
-            // Sorry about code duplication. I don't want to create many functions
-            // right away. Just want to see performance first.
-            dx = (random.nextDouble() - 0.5) / 50;
-            dy = (random.nextDouble() - 0.5) / 50;
-            dz = (random.nextDouble() - 0.5) / 50;
-            r = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          }
-
-          // If s / r < θ, treat this internal node as a single body, and calculate the
-          // force it exerts on sourceBody, and add this amount to sourceBody's net force.
-          if ((node.right - node.left) / r < theta) {
-            // in the if statement above we consider node's width only
-            // because the region was squarified during tree creation.
-            // Thus there is no difference between using width or height.
-            v = gravity * node.mass * sourceBody.mass / (r * r * r);
-            fx += v * dx;
-            fy += v * dy;
-            fz += v * dz;
-          } else {
-            // Otherwise, run the procedure recursively on each of the current node's children.
-
-            // I intentionally unfolded this loop, to save several CPU cycles.
-            if (node.quad0) {
-              queue[pushIdx] = node.quad0;
-              queueLength += 1;
-              pushIdx += 1;
-            }
-            if (node.quad1) {
-              queue[pushIdx] = node.quad1;
-              queueLength += 1;
-              pushIdx += 1;
-            }
-            if (node.quad2) {
-              queue[pushIdx] = node.quad2;
-              queueLength += 1;
-              pushIdx += 1;
-            }
-            if (node.quad3) {
-              queue[pushIdx] = node.quad3;
-              queueLength += 1;
-              pushIdx += 1;
-            }
-            if (node.quad4) {
-              queue[pushIdx] = node.quad4;
-              queueLength += 1;
-              pushIdx += 1;
-            }
-            if (node.quad5) {
-              queue[pushIdx] = node.quad5;
-              queueLength += 1;
-              pushIdx += 1;
-            }
-            if (node.quad6) {
-              queue[pushIdx] = node.quad6;
-              queueLength += 1;
-              pushIdx += 1;
-            }
-            if (node.quad7) {
-              queue[pushIdx] = node.quad7;
-              queueLength += 1;
-              pushIdx += 1;
-            }
-          }
-        }
-      }
-
-      sourceBody.force.x += fx;
-      sourceBody.force.y += fy;
-      sourceBody.force.z += fz;
-    },
-
-    insertBodies = function(bodies) {
-      var x1 = Number.MAX_VALUE,
-        y1 = Number.MAX_VALUE,
-        z1 = Number.MAX_VALUE,
-        x2 = Number.MIN_VALUE,
-        y2 = Number.MIN_VALUE,
-        z2 = Number.MIN_VALUE,
-        i,
-        max = bodies.length;
-
-      // To reduce quad tree depth we are looking for exact bounding box of all particles.
-      i = max;
-      while (i--) {
-        var pos = bodies[i].pos;
-        var x = pos.x;
-        var y = pos.y;
-        var z = pos.z;
-        if (x < x1) {
-          x1 = x;
-        }
-        if (x > x2) {
-          x2 = x;
-        }
-        if (y < y1) {
-          y1 = y;
-        }
-        if (y > y2) {
-          y2 = y;
-        }
-        if (z < z1) {
-          z1 = z;
-        }
-        if (z > z2) {
-          z2 = z;
-        }
-      }
-
-      // Squarify the bounds.
-      var maxSide = Math.max(x2 - x1, Math.max(y2 - y1, z2 - z1));
-
-      x2 = x1 + maxSide;
-      y2 = y1 + maxSide;
-      z2 = z1 + maxSide;
-
-      currentInCache = 0;
-      root = newNode();
-      root.left = x1;
-      root.right = x2;
-      root.top = y1;
-      root.bottom = y2;
-      root.back = z1;
-      root.front = z2;
-
-      i = max - 1;
-      if (i > 0) {
-        root.body = bodies[i];
-      }
-      while (i--) {
-        insert(bodies[i], root);
-      }
-    };
-
-  return {
-    insertBodies: insertBodies,
-    updateBodyForce: update,
-    options: function(newOptions) {
-      if (newOptions) {
-        if (typeof newOptions.gravity === 'number') {
-          gravity = newOptions.gravity;
-        }
-        if (typeof newOptions.theta === 'number') {
-          theta = newOptions.theta;
-        }
-
-        return this;
-      }
-
-      return {
-        gravity: gravity,
-        theta: theta
-      };
-    }
-  };
-};
-
-function getChild(node, idx) {
-  if (idx === 0) return node.quad0;
-  if (idx === 1) return node.quad1;
-  if (idx === 2) return node.quad2;
-  if (idx === 3) return node.quad3;
-  if (idx === 4) return node.quad4;
-  if (idx === 5) return node.quad5;
-  if (idx === 6) return node.quad6;
-  if (idx === 7) return node.quad7;
-  return null;
-}
-
-function setChild(node, idx, child) {
-  if (idx === 0) node.quad0 = child;
-  else if (idx === 1) node.quad1 = child;
-  else if (idx === 2) node.quad2 = child;
-  else if (idx === 3) node.quad3 = child;
-  else if (idx === 4) node.quad4 = child;
-  else if (idx === 5) node.quad5 = child;
-  else if (idx === 6) node.quad6 = child;
-  else if (idx === 7) node.quad7 = child;
-}
-
-},{"./insertStack":65,"./isSamePosition":66,"./node":67,"ngraph.random":68}],65:[function(require,module,exports){
-module.exports = InsertStack;
-
-/**
- * Our implementation of QuadTree is non-recursive to avoid GC hit
- * This data structure represent stack of elements
- * which we are trying to insert into quad tree.
- */
-function InsertStack () {
-    this.stack = [];
-    this.popIdx = 0;
-}
-
-InsertStack.prototype = {
-    isEmpty: function() {
-        return this.popIdx === 0;
-    },
-    push: function (node, body) {
-        var item = this.stack[this.popIdx];
-        if (!item) {
-            // we are trying to avoid memory pressure: create new element
-            // only when absolutely necessary
-            this.stack[this.popIdx] = new InsertStackElement(node, body);
-        } else {
-            item.node = node;
-            item.body = body;
-        }
-        ++this.popIdx;
-    },
-    pop: function () {
-        if (this.popIdx > 0) {
-            return this.stack[--this.popIdx];
-        }
-    },
-    reset: function () {
-        this.popIdx = 0;
-    }
-};
-
-function InsertStackElement(node, body) {
-    this.node = node; // QuadTree node
-    this.body = body; // physical body which needs to be inserted to node
-}
-
-},{}],66:[function(require,module,exports){
-module.exports = function isSamePosition(point1, point2) {
-    var dx = Math.abs(point1.x - point2.x);
-    var dy = Math.abs(point1.y - point2.y);
-    var dz = Math.abs(point1.z - point2.z);
-
-    return (dx < 1e-8 && dy < 1e-8 && dz < 1e-8);
-};
-
-},{}],67:[function(require,module,exports){
-/**
- * Internal data structure to represent 3D QuadTree node
- */
-module.exports = function Node() {
-  // body stored inside this node. In quad tree only leaf nodes (by construction)
-  // contain boides:
-  this.body = null;
-
-  // Child nodes are stored in quads. Each quad is presented by number:
-  // Behind Z median:
-  // 0 | 1
-  // -----
-  // 2 | 3
-  // In front of Z median:
-  // 4 | 5
-  // -----
-  // 6 | 7
-  this.quad0 = null;
-  this.quad1 = null;
-  this.quad2 = null;
-  this.quad3 = null;
-  this.quad4 = null;
-  this.quad5 = null;
-  this.quad6 = null;
-  this.quad7 = null;
-
-  // Total mass of current node
-  this.mass = 0;
-
-  // Center of mass coordinates
-  this.massX = 0;
-  this.massY = 0;
-  this.massZ = 0;
-
-  // bounding box coordinates
-  this.left = 0;
-  this.top = 0;
-  this.bottom = 0;
-  this.right = 0;
-  this.front = 0;
-  this.back = 0;
-};
-
-},{}],68:[function(require,module,exports){
-module.exports = {
-  random: random,
-  randomIterator: randomIterator
-};
-
-/**
- * Creates seeded PRNG with two methods:
- *   next() and nextDouble()
- */
-function random(inputSeed) {
-  var seed = typeof inputSeed === 'number' ? inputSeed : (+ new Date());
-  var randomFunc = function() {
-      // Robert Jenkins' 32 bit integer hash function.
-      seed = ((seed + 0x7ed55d16) + (seed << 12))  & 0xffffffff;
-      seed = ((seed ^ 0xc761c23c) ^ (seed >>> 19)) & 0xffffffff;
-      seed = ((seed + 0x165667b1) + (seed << 5))   & 0xffffffff;
-      seed = ((seed + 0xd3a2646c) ^ (seed << 9))   & 0xffffffff;
-      seed = ((seed + 0xfd7046c5) + (seed << 3))   & 0xffffffff;
-      seed = ((seed ^ 0xb55a4f09) ^ (seed >>> 16)) & 0xffffffff;
-      return (seed & 0xfffffff) / 0x10000000;
-  };
-
-  return {
-      /**
-       * Generates random integer number in the range from 0 (inclusive) to maxValue (exclusive)
-       *
-       * @param maxValue Number REQUIRED. Ommitting this number will result in NaN values from PRNG.
-       */
-      next : function (maxValue) {
-          return Math.floor(randomFunc() * maxValue);
-      },
-
-      /**
-       * Generates random double number in the range from 0 (inclusive) to 1 (exclusive)
-       * This function is the same as Math.random() (except that it could be seeded)
-       */
-      nextDouble : function () {
-          return randomFunc();
-      }
-  };
-}
-
-/*
- * Creates iterator over array, which returns items of array in random order
- * Time complexity is guaranteed to be O(n);
- */
-function randomIterator(array, customRandom) {
-    var localRandom = customRandom || random();
-    if (typeof localRandom.next !== 'function') {
-      throw new Error('customRandom does not match expected API: next() function is missing');
-    }
-
-    return {
-        forEach : function (callback) {
-            var i, j, t;
-            for (i = array.length - 1; i > 0; --i) {
-                j = localRandom.next(i + 1); // i inclusive
-                t = array[j];
-                array[j] = array[i];
-                array[i] = t;
-
-                callback(t);
-            }
-
-            if (array.length) {
-                callback(array[0]);
-            }
-        },
-
-        /**
-         * Shuffles array randomly, in place.
-         */
-        shuffle : function () {
-            var i, j, t;
-            for (i = array.length - 1; i > 0; --i) {
-                j = localRandom.next(i + 1); // i inclusive
-                t = array[j];
-                array[j] = array[i];
-                array[i] = t;
-            }
-
-            return array;
-        }
-    };
-}
-
-},{}],69:[function(require,module,exports){
 module.exports = {
   ladder: ladder,
   complete: complete,
@@ -8079,7 +5845,7 @@ function wattsStrogatz(n, k, p, seed) {
   return g;
 }
 
-},{"ngraph.graph":70,"ngraph.random":71}],70:[function(require,module,exports){
+},{"ngraph.graph":44,"ngraph.random":45}],44:[function(require,module,exports){
 /**
  * @fileOverview Contains definition of the core graph object.
  */
@@ -8633,9 +6399,2333 @@ function Link(fromId, toId, data, id) {
   this.id = id;
 }
 
-},{"ngraph.events":42}],71:[function(require,module,exports){
-arguments[4][68][0].apply(exports,arguments)
-},{"dup":68}],72:[function(require,module,exports){
+},{"ngraph.events":42}],45:[function(require,module,exports){
+module.exports = {
+  random: random,
+  randomIterator: randomIterator
+};
+
+/**
+ * Creates seeded PRNG with two methods:
+ *   next() and nextDouble()
+ */
+function random(inputSeed) {
+  var seed = typeof inputSeed === 'number' ? inputSeed : (+ new Date());
+  var randomFunc = function() {
+      // Robert Jenkins' 32 bit integer hash function.
+      seed = ((seed + 0x7ed55d16) + (seed << 12))  & 0xffffffff;
+      seed = ((seed ^ 0xc761c23c) ^ (seed >>> 19)) & 0xffffffff;
+      seed = ((seed + 0x165667b1) + (seed << 5))   & 0xffffffff;
+      seed = ((seed + 0xd3a2646c) ^ (seed << 9))   & 0xffffffff;
+      seed = ((seed + 0xfd7046c5) + (seed << 3))   & 0xffffffff;
+      seed = ((seed ^ 0xb55a4f09) ^ (seed >>> 16)) & 0xffffffff;
+      return (seed & 0xfffffff) / 0x10000000;
+  };
+
+  return {
+      /**
+       * Generates random integer number in the range from 0 (inclusive) to maxValue (exclusive)
+       *
+       * @param maxValue Number REQUIRED. Ommitting this number will result in NaN values from PRNG.
+       */
+      next : function (maxValue) {
+          return Math.floor(randomFunc() * maxValue);
+      },
+
+      /**
+       * Generates random double number in the range from 0 (inclusive) to 1 (exclusive)
+       * This function is the same as Math.random() (except that it could be seeded)
+       */
+      nextDouble : function () {
+          return randomFunc();
+      }
+  };
+}
+
+/*
+ * Creates iterator over array, which returns items of array in random order
+ * Time complexity is guaranteed to be O(n);
+ */
+function randomIterator(array, customRandom) {
+    var localRandom = customRandom || random();
+    if (typeof localRandom.next !== 'function') {
+      throw new Error('customRandom does not match expected API: next() function is missing');
+    }
+
+    return {
+        forEach : function (callback) {
+            var i, j, t;
+            for (i = array.length - 1; i > 0; --i) {
+                j = localRandom.next(i + 1); // i inclusive
+                t = array[j];
+                array[j] = array[i];
+                array[i] = t;
+
+                callback(t);
+            }
+
+            if (array.length) {
+                callback(array[0]);
+            }
+        },
+
+        /**
+         * Shuffles array randomly, in place.
+         */
+        shuffle : function () {
+            var i, j, t;
+            for (i = array.length - 1; i > 0; --i) {
+                j = localRandom.next(i + 1); // i inclusive
+                t = array[j];
+                array[j] = array[i];
+                array[i] = t;
+            }
+
+            return array;
+        }
+    };
+}
+
+},{}],46:[function(require,module,exports){
+/**
+ * Creates a force based layout that can be switched between 3d and 2d modes
+ * Layout is used by ngraph.pixel
+ *
+ * @param {ngraph.graph} graph instance that needs to be laid out
+ * @param {object} options - configures current layout.
+ * @returns {ojbect} api to operate with current layout. Only two methods required
+ * to exist by ngraph.pixel: `step()` and `getNodePosition()`.
+ */
+var eventify = require('ngraph.events');
+var layout3d = require('ngraph.forcelayout3d');
+var layout2d = layout3d.get2dLayout;
+
+module.exports = createLayout;
+
+function createLayout(graph, options) {
+  options = options || {};
+
+  /**
+   * Shuold the graph be rendered in 3d space? True by default
+   */
+  options.is3d = options.is3d === undefined ? true : options.is3d;
+
+  var is3d = options.is3d;
+  var layout = is3d ? layout3d(graph, options.physics) : layout2d(graph, options.physics);
+
+  var api = {
+    ////////////////////////////////////////////////////////////////////////////
+    // The following two methods are required by ngraph.pixel to be implemented
+    // by all layout providers
+    ////////////////////////////////////////////////////////////////////////////
+
+    /**
+     * Called by `ngraph.pixel` to perform one step. Required to be provided by
+     * all layout interfaces.
+     */
+    step: layout.step,
+
+    /**
+     * Gets position of a given node by its identifier. Required.
+     *
+     * @param {string} nodeId identifier of a node in question.
+     * @returns {object} {x: number, y: number, z: number} coordinates of a node.
+     */
+    getNodePosition: layout.getNodePosition,
+
+    ////////////////////////////////////////////////////////////////////////////
+    // Methods below are not required by ngraph.pixel, and are specific to the
+    // current layout implementation
+    ////////////////////////////////////////////////////////////////////////////
+
+    /**
+     * Sets position for a given node by its identifier.
+     *
+     * @param {string} nodeId identifier of a node that we want to modify
+     * @param {number} x coordinate of a node
+     * @param {number} y coordinate of a node
+     * @param {number} z coordinate of a node
+     */
+    setNodePosition: layout.setNodePosition,
+
+    /**
+     * Toggle rendering mode between 2d and 3d.
+     *
+     * @param {boolean+} newMode if set to true, the renderer will switch to 3d
+     * rendering mode. If set to false, the renderer will switch to 2d mode.
+     * Finally if this argument is not defined, then current rendering mode is
+     * returned.
+     */
+    is3d: mode3d,
+
+    /**
+     * Gets force based simulator of the current layout
+     */
+    simulator: layout.simulator
+  };
+
+  eventify(api);
+
+  return api;
+
+  function mode3d(newMode) {
+    if (newMode === undefined) {
+      return is3d;
+    }
+    if (newMode !== is3d) {
+      toggleLayout();
+    }
+    return api;
+  }
+
+  function toggleLayout() {
+    var idx = 0;
+    var oldLayout = layout;
+    layout.dispose();
+    is3d = !is3d;
+    var physics = copyPhysicsSettings(layout.simulator);
+
+    if (is3d) {
+      layout = layout3d(graph, physics);
+    } else {
+      layout = layout2d(graph, physics);
+    }
+    graph.forEachNode(initLayout);
+    api.step = layout.step;
+    api.setNodePosition = layout.setNodePosition;
+    api.getNodePosition = layout.getNodePosition;
+    api.simulator = layout.simulator;
+
+    api.fire('reset');
+
+    function initLayout(node) {
+      var pos = oldLayout.getNodePosition(node.id);
+      // we need to bump 3d positions, so that forces are disturbed:
+      if (is3d) pos.z = (idx % 2 === 0) ? -1 : 1;
+      else pos.z = 0;
+      layout.setNodePosition(node.id, pos.x, pos.y, pos.z);
+      idx += 1;
+    }
+  }
+
+  function copyPhysicsSettings(simulator) {
+    return {
+      springLength: simulator.springLength(),
+      springCoeff: simulator.springCoeff(),
+      gravity: simulator.gravity(),
+      theta: simulator.theta(),
+      dragCoeff: simulator.dragCoeff(),
+      timeStep: simulator.timeStep()
+    };
+  }
+}
+
+},{"ngraph.events":42,"ngraph.forcelayout3d":47}],47:[function(require,module,exports){
+/**
+ * This module provides all required forces to regular ngraph.physics.simulator
+ * to make it 3D simulator. Ideally ngraph.physics.simulator should operate
+ * with vectors, but on practices that showed performance decrease... Maybe
+ * I was doing it wrong, will see if I can refactor/throw away this module.
+ */
+module.exports = createLayout;
+createLayout.get2dLayout = require('ngraph.forcelayout');
+
+function createLayout(graph, physicsSettings) {
+  var merge = require('ngraph.merge');
+  physicsSettings = merge(physicsSettings, {
+        createQuadTree: require('ngraph.quadtreebh3d'),
+        createBounds: require('./lib/bounds'),
+        createDragForce: require('./lib/dragForce'),
+        createSpringForce: require('./lib/springForce'),
+        integrator: require('./lib/eulerIntegrator'),
+        createBody: require('./lib/createBody')
+      });
+
+  return createLayout.get2dLayout(graph, physicsSettings);
+}
+
+},{"./lib/bounds":48,"./lib/createBody":49,"./lib/dragForce":50,"./lib/eulerIntegrator":51,"./lib/springForce":52,"ngraph.forcelayout":54,"ngraph.merge":66,"ngraph.quadtreebh3d":68}],48:[function(require,module,exports){
+module.exports = function (bodies, settings) {
+  var random = require('ngraph.random').random(42);
+  var boundingBox =  { x1: 0, y1: 0, z1: 0, x2: 0, y2: 0, z2: 0 };
+
+  return {
+    box: boundingBox,
+
+    update: updateBoundingBox,
+
+    reset : function () {
+      boundingBox.x1 = boundingBox.y1 = 0;
+      boundingBox.x2 = boundingBox.y2 = 0;
+      boundingBox.z1 = boundingBox.z2 = 0;
+    },
+
+    getBestNewPosition: function (neighbors) {
+      var graphRect = boundingBox;
+
+      var baseX = 0, baseY = 0, baseZ = 0;
+
+      if (neighbors.length) {
+        for (var i = 0; i < neighbors.length; ++i) {
+          baseX += neighbors[i].pos.x;
+          baseY += neighbors[i].pos.y;
+          baseZ += neighbors[i].pos.z;
+        }
+
+        baseX /= neighbors.length;
+        baseY /= neighbors.length;
+        baseZ /= neighbors.length;
+      } else {
+        baseX = (graphRect.x1 + graphRect.x2) / 2;
+        baseY = (graphRect.y1 + graphRect.y2) / 2;
+        baseZ = (graphRect.z1 + graphRect.z2) / 2;
+      }
+
+      var springLength = settings.springLength;
+      return {
+        x: baseX + random.next(springLength) - springLength / 2,
+        y: baseY + random.next(springLength) - springLength / 2,
+        z: baseZ + random.next(springLength) - springLength / 2
+      };
+    }
+  };
+
+  function updateBoundingBox() {
+    var i = bodies.length;
+    if (i === 0) { return; } // don't have to wory here.
+
+    var x1 = Number.MAX_VALUE,
+        y1 = Number.MAX_VALUE,
+        z1 = Number.MAX_VALUE,
+        x2 = Number.MIN_VALUE,
+        y2 = Number.MIN_VALUE,
+        z2 = Number.MIN_VALUE;
+
+    while(i--) {
+      // this is O(n), could it be done faster with quadtree?
+      // how about pinned nodes?
+      var body = bodies[i];
+      if (body.isPinned) {
+        body.pos.x = body.prevPos.x;
+        body.pos.y = body.prevPos.y;
+        body.pos.z = body.prevPos.z;
+      } else {
+        body.prevPos.x = body.pos.x;
+        body.prevPos.y = body.pos.y;
+        body.prevPos.z = body.pos.z;
+      }
+      if (body.pos.x < x1) {
+        x1 = body.pos.x;
+      }
+      if (body.pos.x > x2) {
+        x2 = body.pos.x;
+      }
+      if (body.pos.y < y1) {
+        y1 = body.pos.y;
+      }
+      if (body.pos.y > y2) {
+        y2 = body.pos.y;
+      }
+      if (body.pos.z < z1) {
+        z1 = body.pos.z;
+      }
+      if (body.pos.z > z2) {
+        z2 = body.pos.z;
+      }
+    }
+
+    boundingBox.x1 = x1;
+    boundingBox.x2 = x2;
+    boundingBox.y1 = y1;
+    boundingBox.y2 = y2;
+    boundingBox.z1 = z1;
+    boundingBox.z2 = z2;
+  }
+};
+
+},{"ngraph.random":72}],49:[function(require,module,exports){
+var physics = require('ngraph.physics.primitives');
+
+module.exports = function(pos) {
+  return new physics.Body3d(pos);
+}
+
+},{"ngraph.physics.primitives":67}],50:[function(require,module,exports){
+/**
+ * Represents 3d drag force, which reduces force value on each step by given
+ * coefficient.
+ *
+ * @param {Object} options for the drag force
+ * @param {Number=} options.dragCoeff drag force coefficient. 0.1 by default
+ */
+module.exports = function (options) {
+  var merge = require('ngraph.merge'),
+      expose = require('ngraph.expose');
+
+  options = merge(options, {
+    dragCoeff: 0.02
+  });
+
+  var api = {
+    update : function (body) {
+      body.force.x -= options.dragCoeff * body.velocity.x;
+      body.force.y -= options.dragCoeff * body.velocity.y;
+      body.force.z -= options.dragCoeff * body.velocity.z;
+    }
+  };
+
+  // let easy access to dragCoeff:
+  expose(options, api, ['dragCoeff']);
+
+  return api;
+};
+
+},{"ngraph.expose":53,"ngraph.merge":66}],51:[function(require,module,exports){
+/**
+ * Performs 3d forces integration, using given timestep. Uses Euler method to solve
+ * differential equation (http://en.wikipedia.org/wiki/Euler_method ).
+ *
+ * @returns {Number} squared distance of total position updates.
+ */
+
+module.exports = integrate;
+
+function integrate(bodies, timeStep) {
+  var dx = 0, tx = 0,
+      dy = 0, ty = 0,
+      dz = 0, tz = 0,
+      i,
+      max = bodies.length;
+
+  for (i = 0; i < max; ++i) {
+    var body = bodies[i],
+        coeff = timeStep / body.mass;
+
+    body.velocity.x += coeff * body.force.x;
+    body.velocity.y += coeff * body.force.y;
+    body.velocity.z += coeff * body.force.z;
+
+    var vx = body.velocity.x,
+        vy = body.velocity.y,
+        vz = body.velocity.z,
+        v = Math.sqrt(vx * vx + vy * vy + vz * vz);
+
+    if (v > 1) {
+      body.velocity.x = vx / v;
+      body.velocity.y = vy / v;
+      body.velocity.z = vz / v;
+    }
+
+    dx = timeStep * body.velocity.x;
+    dy = timeStep * body.velocity.y;
+    dz = timeStep * body.velocity.z;
+
+    body.pos.x += dx;
+    body.pos.y += dy;
+    body.pos.z += dz;
+
+    tx += Math.abs(dx); ty += Math.abs(dy); tz += Math.abs(dz);
+  }
+
+  return (tx * tx + ty * ty + tz * tz)/bodies.length;
+}
+
+},{}],52:[function(require,module,exports){
+/**
+ * Represents 3d spring force, which updates forces acting on two bodies, conntected
+ * by a spring.
+ *
+ * @param {Object} options for the spring force
+ * @param {Number=} options.springCoeff spring force coefficient.
+ * @param {Number=} options.springLength desired length of a spring at rest.
+ */
+module.exports = function (options) {
+  var merge = require('ngraph.merge');
+  var random = require('ngraph.random').random(42);
+  var expose = require('ngraph.expose');
+
+  options = merge(options, {
+    springCoeff: 0.0002,
+    springLength: 80
+  });
+
+  var api = {
+    /**
+     * Upsates forces acting on a spring
+     */
+    update : function (spring) {
+      var body1 = spring.from,
+          body2 = spring.to,
+          length = spring.length < 0 ? options.springLength : spring.length,
+          dx = body2.pos.x - body1.pos.x,
+          dy = body2.pos.y - body1.pos.y,
+          dz = body2.pos.z - body1.pos.z,
+          r = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+      if (r === 0) {
+          dx = (random.nextDouble() - 0.5) / 50;
+          dy = (random.nextDouble() - 0.5) / 50;
+          dz = (random.nextDouble() - 0.5) / 50;
+          r = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      }
+
+      var d = r - length;
+      var coeff = ((!spring.coeff || spring.coeff < 0) ? options.springCoeff : spring.coeff) * d / r * spring.weight;
+
+      body1.force.x += coeff * dx;
+      body1.force.y += coeff * dy;
+      body1.force.z += coeff * dz;
+
+      body2.force.x -= coeff * dx;
+      body2.force.y -= coeff * dy;
+      body2.force.z -= coeff * dz;
+    }
+  };
+
+  expose(options, api, ['springCoeff', 'springLength']);
+  return api;
+}
+
+},{"ngraph.expose":53,"ngraph.merge":66,"ngraph.random":72}],53:[function(require,module,exports){
+module.exports = exposeProperties;
+
+/**
+ * Augments `target` object with getter/setter functions, which modify settings
+ *
+ * @example
+ *  var target = {};
+ *  exposeProperties({ age: 42}, target);
+ *  target.age(); // returns 42
+ *  target.age(24); // make age 24;
+ *
+ *  var filteredTarget = {};
+ *  exposeProperties({ age: 42, name: 'John'}, filteredTarget, ['name']);
+ *  filteredTarget.name(); // returns 'John'
+ *  filteredTarget.age === undefined; // true
+ */
+function exposeProperties(settings, target, filter) {
+  var needsFilter = Object.prototype.toString.call(filter) === '[object Array]';
+  if (needsFilter) {
+    for (var i = 0; i < filter.length; ++i) {
+      augment(settings, target, filter[i]);
+    }
+  } else {
+    for (var key in settings) {
+      augment(settings, target, key);
+    }
+  }
+}
+
+function augment(source, target, key) {
+  if (source.hasOwnProperty(key)) {
+    if (typeof target[key] === 'function') {
+      // this accessor is already defined. Ignore it
+      return;
+    }
+    target[key] = function (value) {
+      if (value !== undefined) {
+        source[key] = value;
+        return target;
+      }
+      return source[key];
+    }
+  }
+}
+
+},{}],54:[function(require,module,exports){
+module.exports = createLayout;
+module.exports.simulator = require('ngraph.physics.simulator');
+
+/**
+ * Creates force based layout for a given graph.
+ * @param {ngraph.graph} graph which needs to be laid out
+ * @param {object} physicsSettings if you need custom settings
+ * for physics simulator you can pass your own settings here. If it's not passed
+ * a default one will be created.
+ */
+function createLayout(graph, physicsSettings) {
+  if (!graph) {
+    throw new Error('Graph structure cannot be undefined');
+  }
+
+  var createSimulator = require('ngraph.physics.simulator');
+  var physicsSimulator = createSimulator(physicsSettings);
+
+  var nodeBodies = typeof Object.create === 'function' ? Object.create(null) : {};
+  var springs = {};
+
+  var springTransform = physicsSimulator.settings.springTransform || noop;
+
+  // Initialize physical objects according to what we have in the graph:
+  initPhysics();
+  listenToGraphEvents();
+
+  var api = {
+    /**
+     * Performs one step of iterative layout algorithm
+     */
+    step: function() {
+      return physicsSimulator.step();
+    },
+
+    /**
+     * For a given `nodeId` returns position
+     */
+    getNodePosition: function (nodeId) {
+      return getInitializedBody(nodeId).pos;
+    },
+
+    /**
+     * Sets position of a node to a given coordinates
+     * @param {string} nodeId node identifier
+     * @param {number} x position of a node
+     * @param {number} y position of a node
+     * @param {number=} z position of node (only if applicable to body)
+     */
+    setNodePosition: function (nodeId) {
+      var body = getInitializedBody(nodeId);
+      body.setPosition.apply(body, Array.prototype.slice.call(arguments, 1));
+    },
+
+    /**
+     * @returns {Object} Link position by link id
+     * @returns {Object.from} {x, y} coordinates of link start
+     * @returns {Object.to} {x, y} coordinates of link end
+     */
+    getLinkPosition: function (linkId) {
+      var spring = springs[linkId];
+      if (spring) {
+        return {
+          from: spring.from.pos,
+          to: spring.to.pos
+        };
+      }
+    },
+
+    /**
+     * @returns {Object} area required to fit in the graph. Object contains
+     * `x1`, `y1` - top left coordinates
+     * `x2`, `y2` - bottom right coordinates
+     */
+    getGraphRect: function () {
+      return physicsSimulator.getBBox();
+    },
+
+    /*
+     * Requests layout algorithm to pin/unpin node to its current position
+     * Pinned nodes should not be affected by layout algorithm and always
+     * remain at their position
+     */
+    pinNode: function (node, isPinned) {
+      var body = getInitializedBody(node.id);
+       body.isPinned = !!isPinned;
+    },
+
+    /**
+     * Checks whether given graph's node is currently pinned
+     */
+    isNodePinned: function (node) {
+      return getInitializedBody(node.id).isPinned;
+    },
+
+    /**
+     * Request to release all resources
+     */
+    dispose: function() {
+      graph.off('changed', onGraphChanged);
+    },
+
+    /**
+     * Gets physical body for a given node id. If node is not found undefined
+     * value is returned.
+     */
+    getBody: getBody,
+
+    /**
+     * Gets spring for a given edge.
+     *
+     * @param {string} linkId link identifer. If two arguments are passed then
+     * this argument is treated as formNodeId
+     * @param {string=} toId when defined this parameter denotes head of the link
+     * and first argument is trated as tail of the link (fromId)
+     */
+    getSpring: getSpring,
+
+    /**
+     * [Read only] Gets current physics simulator
+     */
+    simulator: physicsSimulator
+  };
+
+  return api;
+
+  function getSpring(fromId, toId) {
+    var linkId;
+    if (toId === undefined) {
+      if (typeof fromId === 'string') {
+        // assume fromId as a linkId:
+        linkId = fromId;
+      } else {
+        // assume fromId to be a link object:
+        linkId = fromId.id;
+      }
+    } else {
+      // toId is defined, should grab link:
+      var link = graph.hasLink(fromId, toId);
+      if (!link) return;
+      linkId = link.id;
+    }
+
+    return springs[linkId];
+  }
+
+  function getBody(nodeId) {
+    return nodeBodies[nodeId];
+  }
+
+  function listenToGraphEvents() {
+    graph.on('changed', onGraphChanged);
+  }
+
+  function onGraphChanged(changes) {
+    for (var i = 0; i < changes.length; ++i) {
+      var change = changes[i];
+      if (change.changeType === 'add') {
+        if (change.node) {
+          initBody(change.node.id);
+        }
+        if (change.link) {
+          initLink(change.link);
+        }
+      } else if (change.changeType === 'remove') {
+        if (change.node) {
+          releaseNode(change.node);
+        }
+        if (change.link) {
+          releaseLink(change.link);
+        }
+      }
+    }
+  }
+
+  function initPhysics() {
+    graph.forEachNode(function (node) {
+      initBody(node.id);
+    });
+    graph.forEachLink(initLink);
+  }
+
+  function initBody(nodeId) {
+    var body = nodeBodies[nodeId];
+    if (!body) {
+      var node = graph.getNode(nodeId);
+      if (!node) {
+        throw new Error('initBody() was called with unknown node id');
+      }
+
+      var pos = node.position;
+      if (!pos) {
+        var neighbors = getNeighborBodies(node);
+        pos = physicsSimulator.getBestNewBodyPosition(neighbors);
+      }
+
+      body = physicsSimulator.addBodyAt(pos);
+
+      nodeBodies[nodeId] = body;
+      updateBodyMass(nodeId);
+
+      if (isNodeOriginallyPinned(node)) {
+        body.isPinned = true;
+      }
+    }
+  }
+
+  function releaseNode(node) {
+    var nodeId = node.id;
+    var body = nodeBodies[nodeId];
+    if (body) {
+      nodeBodies[nodeId] = null;
+      delete nodeBodies[nodeId];
+
+      physicsSimulator.removeBody(body);
+    }
+  }
+
+  function initLink(link) {
+    updateBodyMass(link.fromId);
+    updateBodyMass(link.toId);
+
+    var fromBody = nodeBodies[link.fromId],
+        toBody  = nodeBodies[link.toId],
+        spring = physicsSimulator.addSpring(fromBody, toBody, link.length);
+
+    springTransform(link, spring);
+
+    springs[link.id] = spring;
+  }
+
+  function releaseLink(link) {
+    var spring = springs[link.id];
+    if (spring) {
+      var from = graph.getNode(link.fromId),
+          to = graph.getNode(link.toId);
+
+      if (from) updateBodyMass(from.id);
+      if (to) updateBodyMass(to.id);
+
+      delete springs[link.id];
+
+      physicsSimulator.removeSpring(spring);
+    }
+  }
+
+  function getNeighborBodies(node) {
+    // TODO: Could probably be done better on memory
+    var neighbors = [];
+    if (!node.links) {
+      return neighbors;
+    }
+    var maxNeighbors = Math.min(node.links.length, 2);
+    for (var i = 0; i < maxNeighbors; ++i) {
+      var link = node.links[i];
+      var otherBody = link.fromId !== node.id ? nodeBodies[link.fromId] : nodeBodies[link.toId];
+      if (otherBody && otherBody.pos) {
+        neighbors.push(otherBody);
+      }
+    }
+
+    return neighbors;
+  }
+
+  function updateBodyMass(nodeId) {
+    var body = nodeBodies[nodeId];
+    body.mass = nodeMass(nodeId);
+  }
+
+  /**
+   * Checks whether graph node has in its settings pinned attribute,
+   * which means layout algorithm cannot move it. Node can be preconfigured
+   * as pinned, if it has "isPinned" attribute, or when node.data has it.
+   *
+   * @param {Object} node a graph node to check
+   * @return {Boolean} true if node should be treated as pinned; false otherwise.
+   */
+  function isNodeOriginallyPinned(node) {
+    return (node && (node.isPinned || (node.data && node.data.isPinned)));
+  }
+
+  function getInitializedBody(nodeId) {
+    var body = nodeBodies[nodeId];
+    if (!body) {
+      initBody(nodeId);
+      body = nodeBodies[nodeId];
+    }
+    return body;
+  }
+
+  /**
+   * Calculates mass of a body, which corresponds to node with given id.
+   *
+   * @param {String|Number} nodeId identifier of a node, for which body mass needs to be calculated
+   * @returns {Number} recommended mass of the body;
+   */
+  function nodeMass(nodeId) {
+    return 1 + graph.getLinks(nodeId).length / 3.0;
+  }
+}
+
+function noop() { }
+
+},{"ngraph.physics.simulator":55}],55:[function(require,module,exports){
+/**
+ * Manages a simulation of physical forces acting on bodies and springs.
+ */
+module.exports = physicsSimulator;
+
+function physicsSimulator(settings) {
+  var Spring = require('./lib/spring');
+  var expose = require('ngraph.expose');
+  var merge = require('ngraph.merge');
+
+  settings = merge(settings, {
+      /**
+       * Ideal length for links (springs in physical model).
+       */
+      springLength: 30,
+
+      /**
+       * Hook's law coefficient. 1 - solid spring.
+       */
+      springCoeff: 0.0008,
+
+      /**
+       * Coulomb's law coefficient. It's used to repel nodes thus should be negative
+       * if you make it positive nodes start attract each other :).
+       */
+      gravity: -1.2,
+
+      /**
+       * Theta coefficient from Barnes Hut simulation. Ranged between (0, 1).
+       * The closer it's to 1 the more nodes algorithm will have to go through.
+       * Setting it to one makes Barnes Hut simulation no different from
+       * brute-force forces calculation (each node is considered).
+       */
+      theta: 0.8,
+
+      /**
+       * Drag force coefficient. Used to slow down system, thus should be less than 1.
+       * The closer it is to 0 the less tight system will be.
+       */
+      dragCoeff: 0.02,
+
+      /**
+       * Default time step (dt) for forces integration
+       */
+      timeStep : 20,
+
+      /**
+        * Maximum movement of the system which can be considered as stabilized
+        */
+      stableThreshold: 0.009
+  });
+
+  // We allow clients to override basic factory methods:
+  var createQuadTree = settings.createQuadTree || require('ngraph.quadtreebh');
+  var createBounds = settings.createBounds || require('./lib/bounds');
+  var createDragForce = settings.createDragForce || require('./lib/dragForce');
+  var createSpringForce = settings.createSpringForce || require('./lib/springForce');
+  var integrate = settings.integrator || require('./lib/eulerIntegrator');
+  var createBody = settings.createBody || require('./lib/createBody');
+
+  var bodies = [], // Bodies in this simulation.
+      springs = [], // Springs in this simulation.
+      quadTree =  createQuadTree(settings),
+      bounds = createBounds(bodies, settings),
+      springForce = createSpringForce(settings),
+      dragForce = createDragForce(settings);
+
+  var publicApi = {
+    /**
+     * Array of bodies, registered with current simulator
+     *
+     * Note: To add new body, use addBody() method. This property is only
+     * exposed for testing/performance purposes.
+     */
+    bodies: bodies,
+
+    /**
+     * Array of springs, registered with current simulator
+     *
+     * Note: To add new spring, use addSpring() method. This property is only
+     * exposed for testing/performance purposes.
+     */
+    springs: springs,
+
+    /**
+     * Returns settings with which current simulator was initialized
+     */
+    settings: settings,
+
+    /**
+     * Performs one step of force simulation.
+     *
+     * @returns {boolean} true if system is considered stable; False otherwise.
+     */
+    step: function () {
+      accumulateForces();
+      var totalMovement = integrate(bodies, settings.timeStep);
+
+      bounds.update();
+
+      return totalMovement < settings.stableThreshold;
+    },
+
+    /**
+     * Adds body to the system
+     *
+     * @param {ngraph.physics.primitives.Body} body physical body
+     *
+     * @returns {ngraph.physics.primitives.Body} added body
+     */
+    addBody: function (body) {
+      if (!body) {
+        throw new Error('Body is required');
+      }
+      bodies.push(body);
+
+      return body;
+    },
+
+    /**
+     * Adds body to the system at given position
+     *
+     * @param {Object} pos position of a body
+     *
+     * @returns {ngraph.physics.primitives.Body} added body
+     */
+    addBodyAt: function (pos) {
+      if (!pos) {
+        throw new Error('Body position is required');
+      }
+      var body = createBody(pos);
+      bodies.push(body);
+
+      return body;
+    },
+
+    /**
+     * Removes body from the system
+     *
+     * @param {ngraph.physics.primitives.Body} body to remove
+     *
+     * @returns {Boolean} true if body found and removed. falsy otherwise;
+     */
+    removeBody: function (body) {
+      if (!body) { return; }
+
+      var idx = bodies.indexOf(body);
+      if (idx < 0) { return; }
+
+      bodies.splice(idx, 1);
+      if (bodies.length === 0) {
+        bounds.reset();
+      }
+      return true;
+    },
+
+    /**
+     * Adds a spring to this simulation.
+     *
+     * @returns {Object} - a handle for a spring. If you want to later remove
+     * spring pass it to removeSpring() method.
+     */
+    addSpring: function (body1, body2, springLength, springWeight, springCoefficient) {
+      if (!body1 || !body2) {
+        throw new Error('Cannot add null spring to force simulator');
+      }
+
+      if (typeof springLength !== 'number') {
+        springLength = -1; // assume global configuration
+      }
+
+      var spring = new Spring(body1, body2, springLength, springCoefficient >= 0 ? springCoefficient : -1, springWeight);
+      springs.push(spring);
+
+      // TODO: could mark simulator as dirty.
+      return spring;
+    },
+
+    /**
+     * Removes spring from the system
+     *
+     * @param {Object} spring to remove. Spring is an object returned by addSpring
+     *
+     * @returns {Boolean} true if spring found and removed. falsy otherwise;
+     */
+    removeSpring: function (spring) {
+      if (!spring) { return; }
+      var idx = springs.indexOf(spring);
+      if (idx > -1) {
+        springs.splice(idx, 1);
+        return true;
+      }
+    },
+
+    getBestNewBodyPosition: function (neighbors) {
+      return bounds.getBestNewPosition(neighbors);
+    },
+
+    /**
+     * Returns bounding box which covers all bodies
+     */
+    getBBox: function () {
+      return bounds.box;
+    },
+
+    gravity: function (value) {
+      if (value !== undefined) {
+        settings.gravity = value;
+        quadTree.options({gravity: value});
+        return this;
+      } else {
+        return settings.gravity;
+      }
+    },
+
+    theta: function (value) {
+      if (value !== undefined) {
+        settings.theta = value;
+        quadTree.options({theta: value});
+        return this;
+      } else {
+        return settings.theta;
+      }
+    }
+  };
+
+  // allow settings modification via public API:
+  expose(settings, publicApi);
+
+  return publicApi;
+
+  function accumulateForces() {
+    // Accumulate forces acting on bodies.
+    var body,
+        i = bodies.length;
+
+    if (i) {
+      // only add bodies if there the array is not empty:
+      quadTree.insertBodies(bodies); // performance: O(n * log n)
+      while (i--) {
+        body = bodies[i];
+        body.force.reset();
+
+        quadTree.updateBodyForce(body);
+        dragForce.update(body);
+      }
+    }
+
+    i = springs.length;
+    while(i--) {
+      springForce.update(springs[i]);
+    }
+  }
+};
+
+},{"./lib/bounds":56,"./lib/createBody":57,"./lib/dragForce":58,"./lib/eulerIntegrator":59,"./lib/spring":60,"./lib/springForce":61,"ngraph.expose":53,"ngraph.merge":66,"ngraph.quadtreebh":62}],56:[function(require,module,exports){
+module.exports = function (bodies, settings) {
+  var random = require('ngraph.random').random(42);
+  var boundingBox =  { x1: 0, y1: 0, x2: 0, y2: 0 };
+
+  return {
+    box: boundingBox,
+
+    update: updateBoundingBox,
+
+    reset : function () {
+      boundingBox.x1 = boundingBox.y1 = 0;
+      boundingBox.x2 = boundingBox.y2 = 0;
+    },
+
+    getBestNewPosition: function (neighbors) {
+      var graphRect = boundingBox;
+
+      var baseX = 0, baseY = 0;
+
+      if (neighbors.length) {
+        for (var i = 0; i < neighbors.length; ++i) {
+          baseX += neighbors[i].pos.x;
+          baseY += neighbors[i].pos.y;
+        }
+
+        baseX /= neighbors.length;
+        baseY /= neighbors.length;
+      } else {
+        baseX = (graphRect.x1 + graphRect.x2) / 2;
+        baseY = (graphRect.y1 + graphRect.y2) / 2;
+      }
+
+      var springLength = settings.springLength;
+      return {
+        x: baseX + random.next(springLength) - springLength / 2,
+        y: baseY + random.next(springLength) - springLength / 2
+      };
+    }
+  };
+
+  function updateBoundingBox() {
+    var i = bodies.length;
+    if (i === 0) { return; } // don't have to wory here.
+
+    var x1 = Number.MAX_VALUE,
+        y1 = Number.MAX_VALUE,
+        x2 = Number.MIN_VALUE,
+        y2 = Number.MIN_VALUE;
+
+    while(i--) {
+      // this is O(n), could it be done faster with quadtree?
+      // how about pinned nodes?
+      var body = bodies[i];
+      if (body.isPinned) {
+        body.pos.x = body.prevPos.x;
+        body.pos.y = body.prevPos.y;
+      } else {
+        body.prevPos.x = body.pos.x;
+        body.prevPos.y = body.pos.y;
+      }
+      if (body.pos.x < x1) {
+        x1 = body.pos.x;
+      }
+      if (body.pos.x > x2) {
+        x2 = body.pos.x;
+      }
+      if (body.pos.y < y1) {
+        y1 = body.pos.y;
+      }
+      if (body.pos.y > y2) {
+        y2 = body.pos.y;
+      }
+    }
+
+    boundingBox.x1 = x1;
+    boundingBox.x2 = x2;
+    boundingBox.y1 = y1;
+    boundingBox.y2 = y2;
+  }
+}
+
+},{"ngraph.random":72}],57:[function(require,module,exports){
+var physics = require('ngraph.physics.primitives');
+
+module.exports = function(pos) {
+  return new physics.Body(pos);
+}
+
+},{"ngraph.physics.primitives":67}],58:[function(require,module,exports){
+/**
+ * Represents drag force, which reduces force value on each step by given
+ * coefficient.
+ *
+ * @param {Object} options for the drag force
+ * @param {Number=} options.dragCoeff drag force coefficient. 0.1 by default
+ */
+module.exports = function (options) {
+  var merge = require('ngraph.merge'),
+      expose = require('ngraph.expose');
+
+  options = merge(options, {
+    dragCoeff: 0.02
+  });
+
+  var api = {
+    update : function (body) {
+      body.force.x -= options.dragCoeff * body.velocity.x;
+      body.force.y -= options.dragCoeff * body.velocity.y;
+    }
+  };
+
+  // let easy access to dragCoeff:
+  expose(options, api, ['dragCoeff']);
+
+  return api;
+};
+
+},{"ngraph.expose":53,"ngraph.merge":66}],59:[function(require,module,exports){
+/**
+ * Performs forces integration, using given timestep. Uses Euler method to solve
+ * differential equation (http://en.wikipedia.org/wiki/Euler_method ).
+ *
+ * @returns {Number} squared distance of total position updates.
+ */
+
+module.exports = integrate;
+
+function integrate(bodies, timeStep) {
+  var dx = 0, tx = 0,
+      dy = 0, ty = 0,
+      i,
+      max = bodies.length;
+
+  for (i = 0; i < max; ++i) {
+    var body = bodies[i],
+        coeff = timeStep / body.mass;
+
+    body.velocity.x += coeff * body.force.x;
+    body.velocity.y += coeff * body.force.y;
+    var vx = body.velocity.x,
+        vy = body.velocity.y,
+        v = Math.sqrt(vx * vx + vy * vy);
+
+    if (v > 1) {
+      body.velocity.x = vx / v;
+      body.velocity.y = vy / v;
+    }
+
+    dx = timeStep * body.velocity.x;
+    dy = timeStep * body.velocity.y;
+
+    body.pos.x += dx;
+    body.pos.y += dy;
+
+    tx += Math.abs(dx); ty += Math.abs(dy);
+  }
+
+  return (tx * tx + ty * ty)/bodies.length;
+}
+
+},{}],60:[function(require,module,exports){
+module.exports = Spring;
+
+/**
+ * Represents a physical spring. Spring connects two bodies, has rest length
+ * stiffness coefficient and optional weight
+ */
+function Spring(fromBody, toBody, length, coeff, weight) {
+    this.from = fromBody;
+    this.to = toBody;
+    this.length = length;
+    this.coeff = coeff;
+
+    this.weight = typeof weight === 'number' ? weight : 1;
+};
+
+},{}],61:[function(require,module,exports){
+/**
+ * Represents spring force, which updates forces acting on two bodies, conntected
+ * by a spring.
+ *
+ * @param {Object} options for the spring force
+ * @param {Number=} options.springCoeff spring force coefficient.
+ * @param {Number=} options.springLength desired length of a spring at rest.
+ */
+module.exports = function (options) {
+  var merge = require('ngraph.merge');
+  var random = require('ngraph.random').random(42);
+  var expose = require('ngraph.expose');
+
+  options = merge(options, {
+    springCoeff: 0.0002,
+    springLength: 80
+  });
+
+  var api = {
+    /**
+     * Upsates forces acting on a spring
+     */
+    update : function (spring) {
+      var body1 = spring.from,
+          body2 = spring.to,
+          length = spring.length < 0 ? options.springLength : spring.length,
+          dx = body2.pos.x - body1.pos.x,
+          dy = body2.pos.y - body1.pos.y,
+          r = Math.sqrt(dx * dx + dy * dy);
+
+      if (r === 0) {
+          dx = (random.nextDouble() - 0.5) / 50;
+          dy = (random.nextDouble() - 0.5) / 50;
+          r = Math.sqrt(dx * dx + dy * dy);
+      }
+
+      var d = r - length;
+      var coeff = ((!spring.coeff || spring.coeff < 0) ? options.springCoeff : spring.coeff) * d / r * spring.weight;
+
+      body1.force.x += coeff * dx;
+      body1.force.y += coeff * dy;
+
+      body2.force.x -= coeff * dx;
+      body2.force.y -= coeff * dy;
+    }
+  };
+
+  expose(options, api, ['springCoeff', 'springLength']);
+  return api;
+}
+
+},{"ngraph.expose":53,"ngraph.merge":66,"ngraph.random":72}],62:[function(require,module,exports){
+/**
+ * This is Barnes Hut simulation algorithm for 2d case. Implementation
+ * is highly optimized (avoids recusion and gc pressure)
+ *
+ * http://www.cs.princeton.edu/courses/archive/fall03/cs126/assignments/barnes-hut.html
+ */
+
+module.exports = function(options) {
+  options = options || {};
+  options.gravity = typeof options.gravity === 'number' ? options.gravity : -1;
+  options.theta = typeof options.theta === 'number' ? options.theta : 0.8;
+
+  // we require deterministic randomness here
+  var random = require('ngraph.random').random(1984),
+    Node = require('./node'),
+    InsertStack = require('./insertStack'),
+    isSamePosition = require('./isSamePosition');
+
+  var gravity = options.gravity,
+    updateQueue = [],
+    insertStack = new InsertStack(),
+    theta = options.theta,
+
+    nodesCache = [],
+    currentInCache = 0,
+    newNode = function() {
+      // To avoid pressure on GC we reuse nodes.
+      var node = nodesCache[currentInCache];
+      if (node) {
+        node.quad0 = null;
+        node.quad1 = null;
+        node.quad2 = null;
+        node.quad3 = null;
+        node.body = null;
+        node.mass = node.massX = node.massY = 0;
+        node.left = node.right = node.top = node.bottom = 0;
+      } else {
+        node = new Node();
+        nodesCache[currentInCache] = node;
+      }
+
+      ++currentInCache;
+      return node;
+    },
+
+    root = newNode(),
+
+    // Inserts body to the tree
+    insert = function(newBody) {
+      insertStack.reset();
+      insertStack.push(root, newBody);
+
+      while (!insertStack.isEmpty()) {
+        var stackItem = insertStack.pop(),
+          node = stackItem.node,
+          body = stackItem.body;
+
+        if (!node.body) {
+          // This is internal node. Update the total mass of the node and center-of-mass.
+          var x = body.pos.x;
+          var y = body.pos.y;
+          node.mass = node.mass + body.mass;
+          node.massX = node.massX + body.mass * x;
+          node.massY = node.massY + body.mass * y;
+
+          // Recursively insert the body in the appropriate quadrant.
+          // But first find the appropriate quadrant.
+          var quadIdx = 0, // Assume we are in the 0's quad.
+            left = node.left,
+            right = (node.right + left) / 2,
+            top = node.top,
+            bottom = (node.bottom + top) / 2;
+
+          if (x > right) { // somewhere in the eastern part.
+            quadIdx = quadIdx + 1;
+            var oldLeft = left;
+            left = right;
+            right = right + (right - oldLeft);
+          }
+          if (y > bottom) { // and in south.
+            quadIdx = quadIdx + 2;
+            var oldTop = top;
+            top = bottom;
+            bottom = bottom + (bottom - oldTop);
+          }
+
+          var child = getChild(node, quadIdx);
+          if (!child) {
+            // The node is internal but this quadrant is not taken. Add
+            // subnode to it.
+            child = newNode();
+            child.left = left;
+            child.top = top;
+            child.right = right;
+            child.bottom = bottom;
+            child.body = body;
+
+            setChild(node, quadIdx, child);
+          } else {
+            // continue searching in this quadrant.
+            insertStack.push(child, body);
+          }
+        } else {
+          // We are trying to add to the leaf node.
+          // We have to convert current leaf into internal node
+          // and continue adding two nodes.
+          var oldBody = node.body;
+          node.body = null; // internal nodes do not cary bodies
+
+          if (isSamePosition(oldBody.pos, body.pos)) {
+            // Prevent infinite subdivision by bumping one node
+            // anywhere in this quadrant
+            var retriesCount = 3;
+            do {
+              var offset = random.nextDouble();
+              var dx = (node.right - node.left) * offset;
+              var dy = (node.bottom - node.top) * offset;
+
+              oldBody.pos.x = node.left + dx;
+              oldBody.pos.y = node.top + dy;
+              retriesCount -= 1;
+              // Make sure we don't bump it out of the box. If we do, next iteration should fix it
+            } while (retriesCount > 0 && isSamePosition(oldBody.pos, body.pos));
+
+            if (retriesCount === 0 && isSamePosition(oldBody.pos, body.pos)) {
+              // This is very bad, we ran out of precision.
+              // if we do not return from the method we'll get into
+              // infinite loop here. So we sacrifice correctness of layout, and keep the app running
+              // Next layout iteration should get larger bounding box in the first step and fix this
+              return;
+            }
+          }
+          // Next iteration should subdivide node further.
+          insertStack.push(node, oldBody);
+          insertStack.push(node, body);
+        }
+      }
+    },
+
+    update = function(sourceBody) {
+      var queue = updateQueue,
+        v,
+        dx,
+        dy,
+        r, fx = 0,
+        fy = 0,
+        queueLength = 1,
+        shiftIdx = 0,
+        pushIdx = 1;
+
+      queue[0] = root;
+
+      while (queueLength) {
+        var node = queue[shiftIdx],
+          body = node.body;
+
+        queueLength -= 1;
+        shiftIdx += 1;
+        var differentBody = (body !== sourceBody);
+        if (body && differentBody) {
+          // If the current node is a leaf node (and it is not source body),
+          // calculate the force exerted by the current node on body, and add this
+          // amount to body's net force.
+          dx = body.pos.x - sourceBody.pos.x;
+          dy = body.pos.y - sourceBody.pos.y;
+          r = Math.sqrt(dx * dx + dy * dy);
+
+          if (r === 0) {
+            // Poor man's protection against zero distance.
+            dx = (random.nextDouble() - 0.5) / 50;
+            dy = (random.nextDouble() - 0.5) / 50;
+            r = Math.sqrt(dx * dx + dy * dy);
+          }
+
+          // This is standard gravition force calculation but we divide
+          // by r^3 to save two operations when normalizing force vector.
+          v = gravity * body.mass * sourceBody.mass / (r * r * r);
+          fx += v * dx;
+          fy += v * dy;
+        } else if (differentBody) {
+          // Otherwise, calculate the ratio s / r,  where s is the width of the region
+          // represented by the internal node, and r is the distance between the body
+          // and the node's center-of-mass
+          dx = node.massX / node.mass - sourceBody.pos.x;
+          dy = node.massY / node.mass - sourceBody.pos.y;
+          r = Math.sqrt(dx * dx + dy * dy);
+
+          if (r === 0) {
+            // Sorry about code duplucation. I don't want to create many functions
+            // right away. Just want to see performance first.
+            dx = (random.nextDouble() - 0.5) / 50;
+            dy = (random.nextDouble() - 0.5) / 50;
+            r = Math.sqrt(dx * dx + dy * dy);
+          }
+          // If s / r < θ, treat this internal node as a single body, and calculate the
+          // force it exerts on sourceBody, and add this amount to sourceBody's net force.
+          if ((node.right - node.left) / r < theta) {
+            // in the if statement above we consider node's width only
+            // because the region was squarified during tree creation.
+            // Thus there is no difference between using width or height.
+            v = gravity * node.mass * sourceBody.mass / (r * r * r);
+            fx += v * dx;
+            fy += v * dy;
+          } else {
+            // Otherwise, run the procedure recursively on each of the current node's children.
+
+            // I intentionally unfolded this loop, to save several CPU cycles.
+            if (node.quad0) {
+              queue[pushIdx] = node.quad0;
+              queueLength += 1;
+              pushIdx += 1;
+            }
+            if (node.quad1) {
+              queue[pushIdx] = node.quad1;
+              queueLength += 1;
+              pushIdx += 1;
+            }
+            if (node.quad2) {
+              queue[pushIdx] = node.quad2;
+              queueLength += 1;
+              pushIdx += 1;
+            }
+            if (node.quad3) {
+              queue[pushIdx] = node.quad3;
+              queueLength += 1;
+              pushIdx += 1;
+            }
+          }
+        }
+      }
+
+      sourceBody.force.x += fx;
+      sourceBody.force.y += fy;
+    },
+
+    insertBodies = function(bodies) {
+      var x1 = Number.MAX_VALUE,
+        y1 = Number.MAX_VALUE,
+        x2 = Number.MIN_VALUE,
+        y2 = Number.MIN_VALUE,
+        i,
+        max = bodies.length;
+
+      // To reduce quad tree depth we are looking for exact bounding box of all particles.
+      i = max;
+      while (i--) {
+        var x = bodies[i].pos.x;
+        var y = bodies[i].pos.y;
+        if (x < x1) {
+          x1 = x;
+        }
+        if (x > x2) {
+          x2 = x;
+        }
+        if (y < y1) {
+          y1 = y;
+        }
+        if (y > y2) {
+          y2 = y;
+        }
+      }
+
+      // Squarify the bounds.
+      var dx = x2 - x1,
+        dy = y2 - y1;
+      if (dx > dy) {
+        y2 = y1 + dx;
+      } else {
+        x2 = x1 + dy;
+      }
+
+      currentInCache = 0;
+      root = newNode();
+      root.left = x1;
+      root.right = x2;
+      root.top = y1;
+      root.bottom = y2;
+
+      i = max - 1;
+      if (i > 0) {
+        root.body = bodies[i];
+      }
+      while (i--) {
+        insert(bodies[i], root);
+      }
+    };
+
+  return {
+    insertBodies: insertBodies,
+    updateBodyForce: update,
+    options: function(newOptions) {
+      if (newOptions) {
+        if (typeof newOptions.gravity === 'number') {
+          gravity = newOptions.gravity;
+        }
+        if (typeof newOptions.theta === 'number') {
+          theta = newOptions.theta;
+        }
+
+        return this;
+      }
+
+      return {
+        gravity: gravity,
+        theta: theta
+      };
+    }
+  };
+};
+
+function getChild(node, idx) {
+  if (idx === 0) return node.quad0;
+  if (idx === 1) return node.quad1;
+  if (idx === 2) return node.quad2;
+  if (idx === 3) return node.quad3;
+  return null;
+}
+
+function setChild(node, idx, child) {
+  if (idx === 0) node.quad0 = child;
+  else if (idx === 1) node.quad1 = child;
+  else if (idx === 2) node.quad2 = child;
+  else if (idx === 3) node.quad3 = child;
+}
+
+},{"./insertStack":63,"./isSamePosition":64,"./node":65,"ngraph.random":72}],63:[function(require,module,exports){
+module.exports = InsertStack;
+
+/**
+ * Our implmentation of QuadTree is non-recursive to avoid GC hit
+ * This data structure represent stack of elements
+ * which we are trying to insert into quad tree.
+ */
+function InsertStack () {
+    this.stack = [];
+    this.popIdx = 0;
+}
+
+InsertStack.prototype = {
+    isEmpty: function() {
+        return this.popIdx === 0;
+    },
+    push: function (node, body) {
+        var item = this.stack[this.popIdx];
+        if (!item) {
+            // we are trying to avoid memory pressue: create new element
+            // only when absolutely necessary
+            this.stack[this.popIdx] = new InsertStackElement(node, body);
+        } else {
+            item.node = node;
+            item.body = body;
+        }
+        ++this.popIdx;
+    },
+    pop: function () {
+        if (this.popIdx > 0) {
+            return this.stack[--this.popIdx];
+        }
+    },
+    reset: function () {
+        this.popIdx = 0;
+    }
+};
+
+function InsertStackElement(node, body) {
+    this.node = node; // QuadTree node
+    this.body = body; // physical body which needs to be inserted to node
+}
+
+},{}],64:[function(require,module,exports){
+module.exports = function isSamePosition(point1, point2) {
+    var dx = Math.abs(point1.x - point2.x);
+    var dy = Math.abs(point1.y - point2.y);
+
+    return (dx < 1e-8 && dy < 1e-8);
+};
+
+},{}],65:[function(require,module,exports){
+/**
+ * Internal data structure to represent 2D QuadTree node
+ */
+module.exports = function Node() {
+  // body stored inside this node. In quad tree only leaf nodes (by construction)
+  // contain boides:
+  this.body = null;
+
+  // Child nodes are stored in quads. Each quad is presented by number:
+  // 0 | 1
+  // -----
+  // 2 | 3
+  this.quad0 = null;
+  this.quad1 = null;
+  this.quad2 = null;
+  this.quad3 = null;
+
+  // Total mass of current node
+  this.mass = 0;
+
+  // Center of mass coordinates
+  this.massX = 0;
+  this.massY = 0;
+
+  // bounding box coordinates
+  this.left = 0;
+  this.top = 0;
+  this.bottom = 0;
+  this.right = 0;
+};
+
+},{}],66:[function(require,module,exports){
+module.exports = merge;
+
+/**
+ * Augments `target` with properties in `options`. Does not override
+ * target's properties if they are defined and matches expected type in 
+ * options
+ *
+ * @returns {Object} merged object
+ */
+function merge(target, options) {
+  var key;
+  if (!target) { target = {}; }
+  if (options) {
+    for (key in options) {
+      if (options.hasOwnProperty(key)) {
+        var targetHasIt = target.hasOwnProperty(key),
+            optionsValueType = typeof options[key],
+            shouldReplace = !targetHasIt || (typeof target[key] !== optionsValueType);
+
+        if (shouldReplace) {
+          target[key] = options[key];
+        } else if (optionsValueType === 'object') {
+          // go deep, don't care about loops here, we are simple API!:
+          target[key] = merge(target[key], options[key]);
+        }
+      }
+    }
+  }
+
+  return target;
+}
+
+},{}],67:[function(require,module,exports){
+module.exports = {
+  Body: Body,
+  Vector2d: Vector2d,
+  Body3d: Body3d,
+  Vector3d: Vector3d
+};
+
+function Body(x, y) {
+  this.pos = new Vector2d(x, y);
+  this.prevPos = new Vector2d(x, y);
+  this.force = new Vector2d();
+  this.velocity = new Vector2d();
+  this.mass = 1;
+}
+
+Body.prototype.setPosition = function (x, y) {
+  this.prevPos.x = this.pos.x = x;
+  this.prevPos.y = this.pos.y = y;
+};
+
+function Vector2d(x, y) {
+  if (x && typeof x !== 'number') {
+    // could be another vector
+    this.x = typeof x.x === 'number' ? x.x : 0;
+    this.y = typeof x.y === 'number' ? x.y : 0;
+  } else {
+    this.x = typeof x === 'number' ? x : 0;
+    this.y = typeof y === 'number' ? y : 0;
+  }
+}
+
+Vector2d.prototype.reset = function () {
+  this.x = this.y = 0;
+};
+
+function Body3d(x, y, z) {
+  this.pos = new Vector3d(x, y, z);
+  this.prevPos = new Vector3d(x, y, z);
+  this.force = new Vector3d();
+  this.velocity = new Vector3d();
+  this.mass = 1;
+}
+
+Body3d.prototype.setPosition = function (x, y, z) {
+  this.prevPos.x = this.pos.x = x;
+  this.prevPos.y = this.pos.y = y;
+  this.prevPos.z = this.pos.z = z;
+};
+
+function Vector3d(x, y, z) {
+  if (x && typeof x !== 'number') {
+    // could be another vector
+    this.x = typeof x.x === 'number' ? x.x : 0;
+    this.y = typeof x.y === 'number' ? x.y : 0;
+    this.z = typeof x.z === 'number' ? x.z : 0;
+  } else {
+    this.x = typeof x === 'number' ? x : 0;
+    this.y = typeof y === 'number' ? y : 0;
+    this.z = typeof z === 'number' ? z : 0;
+  }
+};
+
+Vector3d.prototype.reset = function () {
+  this.x = this.y = this.z = 0;
+};
+
+},{}],68:[function(require,module,exports){
+/**
+ * This is Barnes Hut simulation algorithm for 3d case. Implementation
+ * is highly optimized (avoids recusion and gc pressure)
+ *
+ * http://www.cs.princeton.edu/courses/archive/fall03/cs126/assignments/barnes-hut.html
+ *
+ * NOTE: This module duplicates a lot of code from 2d case. Primary reason for
+ * this is performance. Every time I tried to abstract away vector operations
+ * I had negative impact on performance. So in this case I'm scarifying code
+ * reuse in favor of speed
+ */
+
+module.exports = function(options) {
+  options = options || {};
+  options.gravity = typeof options.gravity === 'number' ? options.gravity : -1;
+  options.theta = typeof options.theta === 'number' ? options.theta : 0.8;
+
+  // we require deterministic randomness here
+  var random = require('ngraph.random').random(1984),
+    Node = require('./node'),
+    InsertStack = require('./insertStack'),
+    isSamePosition = require('./isSamePosition');
+
+  var gravity = options.gravity,
+    updateQueue = [],
+    insertStack = new InsertStack(),
+    theta = options.theta,
+
+    nodesCache = [],
+    currentInCache = 0,
+    newNode = function() {
+      // To avoid pressure on GC we reuse nodes.
+      var node = nodesCache[currentInCache];
+      if (node) {
+        node.quad0 = null;
+        node.quad4 = null;
+        node.quad1 = null;
+        node.quad5 = null;
+        node.quad2 = null;
+        node.quad6 = null;
+        node.quad3 = null;
+        node.quad7 = null;
+        node.body = null;
+        node.mass = node.massX = node.massY = node.massZ = 0;
+        node.left = node.right = node.top = node.bottom = node.front = node.back = 0;
+      } else {
+        node = new Node();
+        nodesCache[currentInCache] = node;
+      }
+
+      ++currentInCache;
+      return node;
+    },
+
+    root = newNode(),
+
+    // Inserts body to the tree
+    insert = function(newBody) {
+      insertStack.reset();
+      insertStack.push(root, newBody);
+
+      while (!insertStack.isEmpty()) {
+        var stackItem = insertStack.pop(),
+          node = stackItem.node,
+          body = stackItem.body;
+
+        if (!node.body) {
+          // This is internal node. Update the total mass of the node and center-of-mass.
+          var x = body.pos.x;
+          var y = body.pos.y;
+          var z = body.pos.z;
+          node.mass += body.mass;
+          node.massX += body.mass * x;
+          node.massY += body.mass * y;
+          node.massZ += body.mass * z;
+
+          // Recursively insert the body in the appropriate quadrant.
+          // But first find the appropriate quadrant.
+          var quadIdx = 0, // Assume we are in the 0's quad.
+            left = node.left,
+            right = (node.right + left) / 2,
+            top = node.top,
+            bottom = (node.bottom + top) / 2,
+            back = node.back,
+            front = (node.front + back) / 2;
+
+          if (x > right) { // somewhere in the eastern part.
+            quadIdx += 1;
+            var oldLeft = left;
+            left = right;
+            right = right + (right - oldLeft);
+          }
+          if (y > bottom) { // and in south.
+            quadIdx += 2;
+            var oldTop = top;
+            top = bottom;
+            bottom = bottom + (bottom - oldTop);
+          }
+          if (z > front) { // and in frontal part
+            quadIdx += 4;
+            var oldBack = back;
+            back = front;
+            front = back + (back - oldBack);
+          }
+
+          var child = getChild(node, quadIdx);
+          if (!child) {
+            // The node is internal but this quadrant is not taken. Add subnode to it.
+            child = newNode();
+            child.left = left;
+            child.top = top;
+            child.right = right;
+            child.bottom = bottom;
+            child.back = back;
+            child.front = front;
+            child.body = body;
+
+            setChild(node, quadIdx, child);
+          } else {
+            // continue searching in this quadrant.
+            insertStack.push(child, body);
+          }
+        } else {
+          // We are trying to add to the leaf node.
+          // We have to convert current leaf into internal node
+          // and continue adding two nodes.
+          var oldBody = node.body;
+          node.body = null; // internal nodes do not carry bodies
+
+          if (isSamePosition(oldBody.pos, body.pos)) {
+            // Prevent infinite subdivision by bumping one node
+            // anywhere in this quadrant
+            var retriesCount = 3;
+            do {
+              var offset = random.nextDouble();
+              var dx = (node.right - node.left) * offset;
+              var dy = (node.bottom - node.top) * offset;
+              var dz = (node.front - node.back) * offset;
+
+              oldBody.pos.x = node.left + dx;
+              oldBody.pos.y = node.top + dy;
+              oldBody.pos.z = node.back + dz;
+              retriesCount -= 1;
+              // Make sure we don't bump it out of the box. If we do, next iteration should fix it
+            } while (retriesCount > 0 && isSamePosition(oldBody.pos, body.pos));
+
+            if (retriesCount === 0 && isSamePosition(oldBody.pos, body.pos)) {
+              // This is very bad, we ran out of precision.
+              // if we do not return from the method we'll get into
+              // infinite loop here. So we sacrifice correctness of layout, and keep the app running
+              // Next layout iteration should get larger bounding box in the first step and fix this
+              return;
+            }
+          }
+          // Next iteration should subdivide node further.
+          insertStack.push(node, oldBody);
+          insertStack.push(node, body);
+        }
+      }
+    },
+
+    update = function(sourceBody) {
+      var queue = updateQueue,
+        v,
+        dx, dy, dz,
+        r, fx = 0,
+        fy = 0,
+        fz = 0,
+        queueLength = 1,
+        shiftIdx = 0,
+        pushIdx = 1;
+
+      queue[0] = root;
+
+      while (queueLength) {
+        var node = queue[shiftIdx],
+          body = node.body;
+
+        queueLength -= 1;
+        shiftIdx += 1;
+        var differentBody = (body !== sourceBody);
+        if (body && differentBody) {
+          // If the current node is a leaf node (and it is not source body),
+          // calculate the force exerted by the current node on body, and add this
+          // amount to body's net force.
+          dx = body.pos.x - sourceBody.pos.x;
+          dy = body.pos.y - sourceBody.pos.y;
+          dz = body.pos.z - sourceBody.pos.z;
+          r = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+          if (r === 0) {
+            // Poor man's protection against zero distance.
+            dx = (random.nextDouble() - 0.5) / 50;
+            dy = (random.nextDouble() - 0.5) / 50;
+            dz = (random.nextDouble() - 0.5) / 50;
+            r = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          }
+
+          // This is standard gravitation force calculation but we divide
+          // by r^3 to save two operations when normalizing force vector.
+          v = gravity * body.mass * sourceBody.mass / (r * r * r);
+          fx += v * dx;
+          fy += v * dy;
+          fz += v * dz;
+        } else if (differentBody) {
+          // Otherwise, calculate the ratio s / r,  where s is the width of the region
+          // represented by the internal node, and r is the distance between the body
+          // and the node's center-of-mass
+          dx = node.massX / node.mass - sourceBody.pos.x;
+          dy = node.massY / node.mass - sourceBody.pos.y;
+          dz = node.massZ / node.mass - sourceBody.pos.z;
+
+          r = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+          if (r === 0) {
+            // Sorry about code duplication. I don't want to create many functions
+            // right away. Just want to see performance first.
+            dx = (random.nextDouble() - 0.5) / 50;
+            dy = (random.nextDouble() - 0.5) / 50;
+            dz = (random.nextDouble() - 0.5) / 50;
+            r = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          }
+
+          // If s / r < θ, treat this internal node as a single body, and calculate the
+          // force it exerts on sourceBody, and add this amount to sourceBody's net force.
+          if ((node.right - node.left) / r < theta) {
+            // in the if statement above we consider node's width only
+            // because the region was squarified during tree creation.
+            // Thus there is no difference between using width or height.
+            v = gravity * node.mass * sourceBody.mass / (r * r * r);
+            fx += v * dx;
+            fy += v * dy;
+            fz += v * dz;
+          } else {
+            // Otherwise, run the procedure recursively on each of the current node's children.
+
+            // I intentionally unfolded this loop, to save several CPU cycles.
+            if (node.quad0) {
+              queue[pushIdx] = node.quad0;
+              queueLength += 1;
+              pushIdx += 1;
+            }
+            if (node.quad1) {
+              queue[pushIdx] = node.quad1;
+              queueLength += 1;
+              pushIdx += 1;
+            }
+            if (node.quad2) {
+              queue[pushIdx] = node.quad2;
+              queueLength += 1;
+              pushIdx += 1;
+            }
+            if (node.quad3) {
+              queue[pushIdx] = node.quad3;
+              queueLength += 1;
+              pushIdx += 1;
+            }
+            if (node.quad4) {
+              queue[pushIdx] = node.quad4;
+              queueLength += 1;
+              pushIdx += 1;
+            }
+            if (node.quad5) {
+              queue[pushIdx] = node.quad5;
+              queueLength += 1;
+              pushIdx += 1;
+            }
+            if (node.quad6) {
+              queue[pushIdx] = node.quad6;
+              queueLength += 1;
+              pushIdx += 1;
+            }
+            if (node.quad7) {
+              queue[pushIdx] = node.quad7;
+              queueLength += 1;
+              pushIdx += 1;
+            }
+          }
+        }
+      }
+
+      sourceBody.force.x += fx;
+      sourceBody.force.y += fy;
+      sourceBody.force.z += fz;
+    },
+
+    insertBodies = function(bodies) {
+      var x1 = Number.MAX_VALUE,
+        y1 = Number.MAX_VALUE,
+        z1 = Number.MAX_VALUE,
+        x2 = Number.MIN_VALUE,
+        y2 = Number.MIN_VALUE,
+        z2 = Number.MIN_VALUE,
+        i,
+        max = bodies.length;
+
+      // To reduce quad tree depth we are looking for exact bounding box of all particles.
+      i = max;
+      while (i--) {
+        var pos = bodies[i].pos;
+        var x = pos.x;
+        var y = pos.y;
+        var z = pos.z;
+        if (x < x1) {
+          x1 = x;
+        }
+        if (x > x2) {
+          x2 = x;
+        }
+        if (y < y1) {
+          y1 = y;
+        }
+        if (y > y2) {
+          y2 = y;
+        }
+        if (z < z1) {
+          z1 = z;
+        }
+        if (z > z2) {
+          z2 = z;
+        }
+      }
+
+      // Squarify the bounds.
+      var maxSide = Math.max(x2 - x1, Math.max(y2 - y1, z2 - z1));
+
+      x2 = x1 + maxSide;
+      y2 = y1 + maxSide;
+      z2 = z1 + maxSide;
+
+      currentInCache = 0;
+      root = newNode();
+      root.left = x1;
+      root.right = x2;
+      root.top = y1;
+      root.bottom = y2;
+      root.back = z1;
+      root.front = z2;
+
+      i = max - 1;
+      if (i > 0) {
+        root.body = bodies[i];
+      }
+      while (i--) {
+        insert(bodies[i], root);
+      }
+    };
+
+  return {
+    insertBodies: insertBodies,
+    updateBodyForce: update,
+    options: function(newOptions) {
+      if (newOptions) {
+        if (typeof newOptions.gravity === 'number') {
+          gravity = newOptions.gravity;
+        }
+        if (typeof newOptions.theta === 'number') {
+          theta = newOptions.theta;
+        }
+
+        return this;
+      }
+
+      return {
+        gravity: gravity,
+        theta: theta
+      };
+    }
+  };
+};
+
+function getChild(node, idx) {
+  if (idx === 0) return node.quad0;
+  if (idx === 1) return node.quad1;
+  if (idx === 2) return node.quad2;
+  if (idx === 3) return node.quad3;
+  if (idx === 4) return node.quad4;
+  if (idx === 5) return node.quad5;
+  if (idx === 6) return node.quad6;
+  if (idx === 7) return node.quad7;
+  return null;
+}
+
+function setChild(node, idx, child) {
+  if (idx === 0) node.quad0 = child;
+  else if (idx === 1) node.quad1 = child;
+  else if (idx === 2) node.quad2 = child;
+  else if (idx === 3) node.quad3 = child;
+  else if (idx === 4) node.quad4 = child;
+  else if (idx === 5) node.quad5 = child;
+  else if (idx === 6) node.quad6 = child;
+  else if (idx === 7) node.quad7 = child;
+}
+
+},{"./insertStack":69,"./isSamePosition":70,"./node":71,"ngraph.random":72}],69:[function(require,module,exports){
+module.exports = InsertStack;
+
+/**
+ * Our implementation of QuadTree is non-recursive to avoid GC hit
+ * This data structure represent stack of elements
+ * which we are trying to insert into quad tree.
+ */
+function InsertStack () {
+    this.stack = [];
+    this.popIdx = 0;
+}
+
+InsertStack.prototype = {
+    isEmpty: function() {
+        return this.popIdx === 0;
+    },
+    push: function (node, body) {
+        var item = this.stack[this.popIdx];
+        if (!item) {
+            // we are trying to avoid memory pressure: create new element
+            // only when absolutely necessary
+            this.stack[this.popIdx] = new InsertStackElement(node, body);
+        } else {
+            item.node = node;
+            item.body = body;
+        }
+        ++this.popIdx;
+    },
+    pop: function () {
+        if (this.popIdx > 0) {
+            return this.stack[--this.popIdx];
+        }
+    },
+    reset: function () {
+        this.popIdx = 0;
+    }
+};
+
+function InsertStackElement(node, body) {
+    this.node = node; // QuadTree node
+    this.body = body; // physical body which needs to be inserted to node
+}
+
+},{}],70:[function(require,module,exports){
+module.exports = function isSamePosition(point1, point2) {
+    var dx = Math.abs(point1.x - point2.x);
+    var dy = Math.abs(point1.y - point2.y);
+    var dz = Math.abs(point1.z - point2.z);
+
+    return (dx < 1e-8 && dy < 1e-8 && dz < 1e-8);
+};
+
+},{}],71:[function(require,module,exports){
+/**
+ * Internal data structure to represent 3D QuadTree node
+ */
+module.exports = function Node() {
+  // body stored inside this node. In quad tree only leaf nodes (by construction)
+  // contain boides:
+  this.body = null;
+
+  // Child nodes are stored in quads. Each quad is presented by number:
+  // Behind Z median:
+  // 0 | 1
+  // -----
+  // 2 | 3
+  // In front of Z median:
+  // 4 | 5
+  // -----
+  // 6 | 7
+  this.quad0 = null;
+  this.quad1 = null;
+  this.quad2 = null;
+  this.quad3 = null;
+  this.quad4 = null;
+  this.quad5 = null;
+  this.quad6 = null;
+  this.quad7 = null;
+
+  // Total mass of current node
+  this.mass = 0;
+
+  // Center of mass coordinates
+  this.massX = 0;
+  this.massY = 0;
+  this.massZ = 0;
+
+  // bounding box coordinates
+  this.left = 0;
+  this.top = 0;
+  this.bottom = 0;
+  this.right = 0;
+  this.front = 0;
+  this.back = 0;
+};
+
+},{}],72:[function(require,module,exports){
+arguments[4][45][0].apply(exports,arguments)
+},{"dup":45}],73:[function(require,module,exports){
 /*!
 	query-string
 	Parse and stringify URL query strings
@@ -8703,7 +8793,7 @@ arguments[4][68][0].apply(exports,arguments)
 	}
 })();
 
-},{}],73:[function(require,module,exports){
+},{}],74:[function(require,module,exports){
 /**
  * @author James Baicoianu / http://www.baicoianu.com/
  * Source: https://github.com/mrdoob/three.js/blob/master/examples/js/controls/FlyControls.js
@@ -8720,22 +8810,6 @@ function fly(camera, domElement, THREE) {
   domElement = domElement || document;
   domElement.setAttribute('tabindex', -1);
 
-  var moveState = {
-    up: 0,
-    down: 0,
-    left: 0,
-    right: 0,
-    forward: 0,
-    back: 0,
-    pitchUp: 0,
-    pitchDown: 0,
-    yawLeft: 0,
-    yawRight: 0,
-    rollLeft: 0,
-    rollRight: 0
-  };
-
-
   var api = {
     rollSpeed: 0.005,
     movementSpeed: 1,
@@ -8750,16 +8824,7 @@ function fly(camera, domElement, THREE) {
     /**
      * Releases all event handlers
      */
-    destroy: destroy,
-
-    /**
-     * This allows external developers to better control our internal state
-     * Super flexible, yet a bit dangerous
-     */
-    moveState: moveState,
-
-    updateMovementVector: updateMovementVector,
-    updateRotationVector: updateRotationVector
+    destroy: destroy
   };
 
   eventify(api);
@@ -8769,6 +8834,21 @@ function fly(camera, domElement, THREE) {
   var keyMap = createKeyMap();
   // we will remember what keys should be releaed in global keyup handler:
   var pendingKeyUp = Object.create(null);
+
+  var moveState = {
+    up: 0,
+    down: 0,
+    left: 0,
+    right: 0,
+    forward: 0,
+    back: 0,
+    pitchUp: 0,
+    pitchDown: 0,
+    yawLeft: 0,
+    yawRight: 0,
+    rollLeft: 0,
+    rollRight: 0
+  };
 
   var moveVector = new THREE.Vector3(0, 0, 0);
   var rotationVector = new THREE.Vector3(0, 0, 0);
@@ -8944,7 +9024,7 @@ function fly(camera, domElement, THREE) {
   }
 }
 
-},{"./keymap.js":74,"ngraph.events":75}],74:[function(require,module,exports){
+},{"./keymap.js":75,"ngraph.events":42}],75:[function(require,module,exports){
 /**
  * Defines default key bindings for the controls
  */
@@ -8967,10 +9047,8 @@ function createKeyMap() {
   };
 }
 
-},{}],75:[function(require,module,exports){
-arguments[4][42][0].apply(exports,arguments)
-},{"dup":42}],76:[function(require,module,exports){
-// File:src/Three.js
+},{}],76:[function(require,module,exports){
+var self = self || {};// File:src/Three.js
 
 /**
  * @author mrdoob / http://mrdoob.com/
@@ -43515,6 +43593,20 @@ THREE.MorphBlendMesh.prototype.update = function ( delta ) {
 
 };
 
+
+// Export the THREE object for **Node.js**, with
+// backwards-compatibility for the old `require()` API. If we're in
+// the browser, add `_` as a global object via a string identifier,
+// for Closure Compiler "advanced" mode.
+if (typeof exports !== 'undefined') {
+  if (typeof module !== 'undefined' && module.exports) {
+    exports = module.exports = THREE;
+  }
+  exports.THREE = THREE;
+} else {
+  this['THREE'] = THREE;
+}
+
 },{}],77:[function(require,module,exports){
 /**
  * This file contains all possible configuration optins for the renderer
@@ -43537,11 +43629,6 @@ function validateOptions(options) {
    * Note: The autofit will only be executed until first user input.
    */
   options.autoFit = options.autoFit !== undefined ? options.autoFit : true;
-
-  /**
-   * Shuold the graph be rendered in 3d space? True by default
-   */
-  options.is3d = options.is3d === undefined ? true : options.is3d;
 
   /**
    * Background of the scene in hexadecimal form. Default value is 0x000000 (black);

@@ -6,24 +6,13 @@ var createEdgeView = require('./lib/edgeView.js');
 var createTooltipView = require('./lib/tooltip.js');
 var createAutoFit = require('./lib/autoFit.js');
 var createInput = require('./lib/input.js');
-var layout3d = require('ngraph.forcelayout3d');
-var layout2d = layout3d.get2dLayout;
+var createLayout = require('pixel.layout');
 var validateOptions = require('./options.js');
 var flyTo = require('./lib/flyTo.js');
 
 function pixel(graph, options) {
   // This is our public API.
   var api = {
-    /**
-     * Toggle rendering mode between 2d and 3d
-     *
-     * @param {boolean+} newMode if set to true, the renderer will switch to 3d
-     * rendering mode. If set to false, the renderer will switch to 2d mode.
-     * Finally if this argument is not defined, then current rendering mode is
-     * returned.
-     */
-    is3d: mode3d,
-
     /**
      * Set or get size of a node
      *
@@ -102,8 +91,10 @@ function pixel(graph, options) {
   options = validateOptions(options);
 
   var container = options.container;
-  var is3d = options.is3d;
-  var layout = is3d ? layout3d(graph, options.physics) : layout2d(graph, options.physics);
+  var layout = createLayout(graph, options);
+  if (layout && typeof layout.on === 'function') {
+    layout.on('reset', layoutReset);
+  }
   var isStable = false;
   var nodeIdToIdx = Object.create(null);
   var edgeIdToIdx = Object.create(null);
@@ -118,17 +109,11 @@ function pixel(graph, options) {
   run();
   focus();
 
-
   return api;
 
-  function mode3d(newMode) {
-    if (newMode === undefined) {
-      return is3d;
-    }
-    if (newMode !== is3d) {
-      toggleLayout();
-    }
-    return api;
+  function layoutReset() {
+    initPositions();
+    stable(false);
   }
 
   function run() {
@@ -180,7 +165,7 @@ function pixel(graph, options) {
 
     function addNodePosition(node) {
       var position = layout.getNodePosition(node.id);
-      if (!is3d) position.z = 0;
+      if (typeof position.z !== 'number') position.z = 0;
       nodePositions.push(position);
       nodeIdToIdx[node.id] = idx;
       nodeIdxToId[idx] = node.id;
@@ -212,13 +197,13 @@ function pixel(graph, options) {
     renderer = new THREE.WebGLRenderer({
       antialias: false
     });
+
     renderer.setClearColor(options.clearColor, 1);
     renderer.setSize(container.clientWidth, container.clientHeight);
     container.appendChild(renderer.domElement);
 
     input = createInput(camera, graph, renderer.domElement);
     input.on('move', stopAutoFit);
-    input.onKey(options.layoutToggleKey, toggleLayout);
     input.on('nodeover', setTooltip);
     input.on('nodeclick', passthrough('nodeclick'));
     input.on('nodedblclick', passthrough('nodedblclick'));
@@ -271,43 +256,6 @@ function pixel(graph, options) {
 
   function getNodeByIndex(nodeIndex) {
     return nodeIndex && graph.getNode(nodeIdxToId[nodeIndex]);
-  }
-
-  function toggleLayout() {
-    layout.dispose();
-    is3d = !is3d;
-    var physics = copyPhysicsSettings(layout.simulator);
-
-    if (is3d) {
-      layout = layout3d(graph, physics);
-    } else {
-      layout = layout2d(graph, physics);
-    }
-    Object.keys(nodeIdToIdx).forEach(initLayout);
-
-    initPositions();
-    stable(false);
-    api.fire('modeChanged', is3d);
-
-    function initLayout(nodeId) {
-      var idx = nodeIdToIdx[nodeId];
-      var pos = nodePositions[idx];
-      // we need to bump 3d positions, so that forces are disturbed:
-      if (is3d) pos.z = (idx % 2 === 0) ? -1 : 1;
-      else pos.z = 0;
-      layout.setNodePosition(nodeId, pos.x, pos.y, pos.z);
-    }
-  }
-
-  function copyPhysicsSettings(simulator) {
-    return {
-      springLength: simulator.springLength(),
-      springCoeff: simulator.springCoeff(),
-      gravity: simulator.gravity(),
-      theta: simulator.theta(),
-      dragCoeff: simulator.dragCoeff(),
-      timeStep: simulator.timeStep()
-    };
   }
 
   function stopAutoFit() {

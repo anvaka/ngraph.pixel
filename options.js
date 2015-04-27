@@ -21,11 +21,6 @@ function validateOptions(options) {
   options.autoFit = options.autoFit !== undefined ? options.autoFit : true;
 
   /**
-   * Shuold the graph be rendered in 3d space? True by default
-   */
-  options.is3d = options.is3d === undefined ? true : options.is3d;
-
-  /**
    * Background of the scene in hexadecimal form. Default value is 0x000000 (black);
    */
   options.clearColor = typeof options.clearColor === 'number' ? options.clearColor : 0x000000;
