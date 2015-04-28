@@ -3,7 +3,7 @@
  */
 module.exports = validateOptions;
 
-var key = require('./lib/keyCode.js');
+var createLayout = require('pixel.layout'); // the default layout
 
 function validateOptions(options) {
   options = options || {};
@@ -26,17 +26,11 @@ function validateOptions(options) {
   options.clearColor = typeof options.clearColor === 'number' ? options.clearColor : 0x000000;
 
   /**
-   * Enable/disable layout toggle between 2d and 3d. Enabled by default.
-   * Note: If this feature is enabled, then `options.layoutToggleKey` is used as
-   * a keyboard trigger.
+   * Layout algorithm factory. Valid layout algorithms are required to have just two methods:
+   * `getNodePosition(nodeId)` and `step()`. See `pixel.layout` module for the
+   * reference: https://github.com/anvaka/pixel.layout
    */
-  options.toggleEnabled = options.toggleEnabled === undefined ? true : options.toggleEnabled;
-
-  /**
-   * Key code which is used to toggle layout between 2d and 3d mode. This code
-   * is ignored unless `options.toggleEnabled` is set to true;
-   */
-  options.layoutToggleKey = typeof options.layoutToggleKey !== 'number' ? key.L : options.layoutToggleKey;
+  options.createLayout = typeof options.createLayout === 'function' ? options.createLayout : createLayout;
 
   return options;
 }

@@ -6,7 +6,6 @@ var createEdgeView = require('./lib/edgeView.js');
 var createTooltipView = require('./lib/tooltip.js');
 var createAutoFit = require('./lib/autoFit.js');
 var createInput = require('./lib/input.js');
-var createLayout = require('pixel.layout');
 var validateOptions = require('./options.js');
 var flyTo = require('./lib/flyTo.js');
 
@@ -83,15 +82,18 @@ function pixel(graph, options) {
      *
      * @param {string} nodeId identifier of the node to show
      */
-    showNode: showNode
+    showNode: showNode,
+
+    beforeFrame: beforeFrame
   };
 
   eventify(api);
 
   options = validateOptions(options);
 
+  var beforeFrameCallback;
   var container = options.container;
-  var layout = createLayout(graph, options);
+  var layout = options.createLayout(graph, options);
   if (layout && typeof layout.on === 'function') {
     layout.on('reset', layoutReset);
   }
@@ -119,6 +121,9 @@ function pixel(graph, options) {
   function run() {
     requestAnimationFrame(run);
 
+    if (beforeFrameCallback) {
+      beforeFrameCallback();
+    }
     if (!isStable) {
       isStable = layout.step();
       nodeView.update();
@@ -137,6 +142,10 @@ function pixel(graph, options) {
       autoFitController.update();
     }
     renderer.render(scene, camera);
+  }
+
+  function beforeFrame(newBeforeFrameCallback) {
+    beforeFrameCallback = newBeforeFrameCallback;
   }
 
   function init() {
