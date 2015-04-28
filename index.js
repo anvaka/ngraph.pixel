@@ -84,7 +84,19 @@ function pixel(graph, options) {
      */
     showNode: showNode,
 
-    beforeFrame: beforeFrame
+    /**
+     * Allows clients to provide a callback function, which is invoked before
+     * each rendering frame
+     *
+     * @param {function} newBeforeFrameCallback the callback function. This
+     * argument is not chained, and any new value overwrites the old one
+     */
+    beforeFrame: beforeFrame,
+
+    /**
+     * Returns instance of the three.js camera
+     */
+    camera: getCamera
   };
 
   eventify(api);
@@ -116,6 +128,10 @@ function pixel(graph, options) {
   function layoutReset() {
     initPositions();
     stable(false);
+  }
+
+  function getCamera() {
+    return camera;
   }
 
   function run() {
