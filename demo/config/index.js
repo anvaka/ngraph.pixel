@@ -17,7 +17,7 @@ function showNodeDetails(node) {
   nodeSettings.color = renderer.nodeColor(node.id);
   nodeSettings.size = renderer.nodeSize(node.id);
   var layout = renderer.layout();
-  if (layout && layout.isNodePinned) {
+  if (layout && layout.pinNode) {
     nodeSettings.isPinned = layout.pinNode(node.id);
   }
   gui.update();
