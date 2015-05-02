@@ -33,11 +33,9 @@ function createNodeSettings(gui, renderer) {
   function setPinned() {
     if (!currentNode.id) return;
 
-    var graph = renderer.graph();
     var layout = renderer.layout();
-    var node = graph.getNode(currentNode.id);
     if (layout.pinNode) {
-      layout.pinNode(node, currentNode.isPinned);
+      layout.pinNode(currentNode.id, currentNode.isPinned);
     } else {
       currentNode.isPinned = false;
       gui.update();
