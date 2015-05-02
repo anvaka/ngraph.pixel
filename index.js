@@ -96,7 +96,15 @@ function pixel(graph, options) {
     /**
      * Returns instance of the three.js camera
      */
-    camera: getCamera
+    camera: getCamera,
+
+    /**
+     * Allows clients to set/get current clear color of the scene (the background)
+     *
+     * @param {number+} color if specified, then new color is set. Otherwise
+     * returns current clear color.
+     */
+    clearColor: clearColor
   };
 
   eventify(api);
@@ -132,6 +140,13 @@ function pixel(graph, options) {
 
   function getCamera() {
     return camera;
+  }
+
+  function clearColor(newColor) {
+    newColor = normalizeColor(newColor);
+    if (typeof newColor !== 'number') return renderer.getClearColor();
+
+    renderer.setClearColor(newColor);
   }
 
   function run() {
