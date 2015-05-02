@@ -104,7 +104,15 @@ function pixel(graph, options) {
      * @param {number+} color if specified, then new color is set. Otherwise
      * returns current clear color.
      */
-    clearColor: clearColor
+    clearColor: clearColor,
+
+    /**
+     * Synonmim for `clearColor`. Sets the background color of the scene
+     *
+     * @param {number+} color if specified, then new color is set. Otherwise
+     * returns current clear color.
+     */
+    background: clearColor
   };
 
   eventify(api);
