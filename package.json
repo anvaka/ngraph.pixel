@@ -20,12 +20,6 @@
     "webgl",
     "particle"
   ],
-  "browserify": {
-    "transform": [
-      "glslify",
-      "brfs"
-    ]
-  },
   "author": "Andrei Kashcha",
   "license": "MIT",
   "repository": {
@@ -33,9 +27,7 @@
     "url": "https://github.com/anvaka/ngraph.pixel"
   },
   "dependencies": {
-    "brfs": "^1.4.0",
     "element-class": "^0.2.0",
-    "glslify": "^2.1.1",
     "insert-css": "^0.2.0",
     "ngraph.events": "0.0.3",
     "pixel.layout": "^0.1.1",
