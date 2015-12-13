@@ -26,6 +26,42 @@ module, which can layout graphs in both 3D:
 and 2D spaces:
 ![2d graph](http://i.imgur.com/SCRFvnQ.png)
 
+## mouse events
+
+How to detect when user clicks/hovers a node?
+
+``` js
+var renderGraph = require('ngraph.pixel');
+var renderer = renderGraph(graph);
+renderer.on('nodeclick', function(node) {
+  console.log('Clicked on ' + JSON.stringify(node));
+});
+
+renderer.on('nodedblclick', function(node) {
+  console.log('Double clicked on ' + JSON.stringify(node));
+});
+
+renderer.on('nodehover', function(node) {
+  console.log('Hover node ' + JSON.stringify(node));
+});
+```
+
+## custom node ui
+
+How to set custom links color?
+
+``` js
+var graph = require('ngraph.graph')();
+var myLink = graph.addLink(1, 2);
+
+var renderGraph = require('ngraph.pixel');
+var renderer = renderGraph(graph);
+var fromColor = 0xFF00FF;
+var toColor = 0x00FFFF;
+renderer.linkColor(myLink.id, fromColor, toColor);
+```
+
+
 # demo
 
 You can take a look at available demos:
