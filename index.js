@@ -33,9 +33,14 @@ function pixel(graph, options) {
     nodeColor: nodeColor,
 
     /**
-     * Sets color of a link
+     * Gets or sets color of a link
      *
-     * @param {string} linkId identifier of a link.
+     * @param {string|function} linkId identifier of a link.
+     * - If this argument is the only argument, then color of the link
+     *   { from: hexColor, to: hexColor } is returned.
+     * - If this argument is a function, then the it will be used as iterator
+     *   callback to get each link color. The only argument to this function is
+     *   `link` object. Expected output is { from: hexColor, to: hexColor }
      * @param {number} fromColorHex - rgb color hex code of a link start
      * @param {number+} toColorHex - rgb color hex code of theh link end. If not
      * specified the same value as `fromColorHex` is used.
@@ -270,10 +275,27 @@ function pixel(graph, options) {
   }
 
   function linkColor(linkId, fromColorHex, toColorHex) {
+    if (typeof linkId === 'function') {
+      // This means that user passed a factory function to bulk-set colors of
+      // each link. We should iterate over every link and use result of the function
+      // to set color:
+      graph.forEachLink(getLinkColorFactory(linkId));
+      return;
+    }
+
     var idx = edgeIdToIdx[linkId];
     var idxValid = (0 <= idx && idx < edgePositions.length);
     if (!idxValid) throw new Error('Link index is not valid ' + linkId);
+
+    if (fromColorHex === undefined) return edgeView.color(idx);
     return edgeView.color(idx, normalizeColor(fromColorHex), normalizeColor(toColorHex));
+  }
+
+  function getLinkColorFactory(setter) {
+    return function(link) {
+      var color = setter(link);
+      linkColor(link.id, color.from, color.to);
+    };
   }
 
   function getNodeIdxByNodeId(nodeId) {
