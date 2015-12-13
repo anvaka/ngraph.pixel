@@ -265,6 +265,8 @@ function pixel(graph, options) {
     window.addEventListener('resize', onWindowResize, false);
   }
 
+  // TODO: looks like these node/links manipulation should be extracted into
+  // higher level API.
   function nodeColor(nodeId, color) {
     if (typeof nodeId === 'function') {
       graph.forEachNode(getNodeColorFactory(nodeId));
@@ -282,8 +284,26 @@ function pixel(graph, options) {
   }
 
   function nodeSize(nodeId, size) {
+    if (typeof nodeId === 'function') {
+      graph.forEachNode(getNodeSizeFactory(nodeId));
+      return;
+    }
     var idx = getNodeIdxByNodeId(nodeId);
     return nodeView.size(idx, size);
+  }
+
+  function getNodeSizeFactory(setter) {
+    return function(node) {
+      var size = setter(node);
+      nodeSize(node.id, size);
+    };
+  }
+
+  function getNodeColorFactory(setter) {
+    return function(node) {
+      var color = setter(node);
+      nodeColor(node.id, color);
+    };
   }
 
   function linkColor(linkId, fromColorHex, toColorHex) {
