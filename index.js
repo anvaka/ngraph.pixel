@@ -265,8 +265,19 @@ function pixel(graph, options) {
   }
 
   function nodeColor(nodeId, color) {
+    if (typeof nodeId === 'function') {
+      graph.forEachNode(getNodeColorFactory(nodeId));
+      return;
+    }
     var idx = getNodeIdxByNodeId(nodeId);
     return nodeView.color(idx, normalizeColor(color));
+  }
+
+  function getNodeColorFactory(setter) {
+    return function(node) {
+      var color = setter(node);
+      nodeColor(node.id, color);
+    };
   }
 
   function nodeSize(nodeId, size) {
