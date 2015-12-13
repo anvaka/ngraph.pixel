@@ -31,7 +31,7 @@
     "insert-css": "^0.2.0",
     "ngraph.events": "0.0.3",
     "pixel.layout": "^0.1.1",
-    "three": "^0.71.1",
+    "three": "^0.73.0",
     "three.fly": "0.1.6"
   },
   "devDependencies": {

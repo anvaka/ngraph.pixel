@@ -5,10 +5,10 @@ var renderGraph = require('../../');
 var addCurrentNodeSettings = require('./nodeSettings.js');
 
 var renderer = renderGraph(graph);
-//var settingsView = createSettingsView(renderer);
-//var gui = settingsView.gui();
+var settingsView = createSettingsView(renderer);
+var gui = settingsView.gui();
 
-//var nodeSettings = addCurrentNodeSettings(gui, renderer);
+var nodeSettings = addCurrentNodeSettings(gui, renderer);
 
 renderer.on('nodeclick', showNodeDetails);
 
