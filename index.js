@@ -184,6 +184,7 @@ function pixel(graph, options) {
     input.update();
     if (autoFitController) {
       autoFitController.update();
+      input.adjustSpeed(autoFitController.lastRadius());
     }
     renderer.render(scene, camera);
   }
