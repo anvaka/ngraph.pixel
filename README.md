@@ -44,6 +44,10 @@ renderer.on('nodedblclick', function(node) {
 renderer.on('nodehover', function(node) {
   console.log('Hover node ' + JSON.stringify(node));
 });
+
+// If you want to unsubscribe from event, just use `off()` method:
+renderer.on('nodehover', handler);
+renderer.off('nodehover', handler);
 ```
 
 ## custom node ui
@@ -61,6 +65,17 @@ var toColor = 0x00FFFF;
 renderer.linkColor(myLink.id, fromColor, toColor);
 ```
 
+You can also use a function to set link colors:
+
+```
+renderer.linkColor(function(link) {
+  // link is a real link from a graph
+  return {
+    from: 0xffffff,
+    to: 0x000000
+  };
+});
+```
 
 # demo
 
