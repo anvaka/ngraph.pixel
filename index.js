@@ -341,7 +341,7 @@ function pixel(graph, options) {
 
   function setTooltip(e) {
     var node = getNodeByIndex(e.nodeIndex);
-    if (node) {
+    if (node !== undefined) {
       tooltipView.show(e, node);
     } else {
       tooltipView.hide(e);
