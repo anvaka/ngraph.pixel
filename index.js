@@ -202,7 +202,7 @@ function pixel(graph, options) {
   }
 
   function listenToGraph() {
-    // TODO: this is not efficient at all. We are recriating view from scratch on
+    // TODO: this is not efficient at all. We are recreating view from scratch on
     // every single change.
     graph.on('changed', initPositions);
   }

@@ -67,7 +67,7 @@ renderer.linkColor(myLink.id, fromColor, toColor);
 
 You can also use a function to set link colors:
 
-```
+``` js
 renderer.linkColor(function(link) {
   // link is a real link from a graph
   return {
