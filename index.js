@@ -126,6 +126,8 @@ function pixel(graph, options) {
 
   var beforeFrameCallback;
   var container = options.container;
+  verifyContainerDimensions(container);
+
   var layout = options.createLayout(graph, options);
   if (layout && typeof layout.on === 'function') {
     layout.on('reset', layoutReset);
@@ -416,5 +418,15 @@ function pixel(graph, options) {
   function showNode(nodeId, stopDistance) {
     stopDistance = typeof stopDistance === 'number' ? stopDistance : 100;
     flyTo(camera, layout.getNodePosition(nodeId), stopDistance);
+  }
+}
+
+function verifyContainerDimensions(container) {
+  if (!container) {
+    throw new Error('container is required for the renderer');
+  }
+
+  if (container.clientWidth <= 0 || container.clientHeight <= 0) {
+    console.warn('Container is not visible. Make sure to set width/height to see the graph');
   }
 }
