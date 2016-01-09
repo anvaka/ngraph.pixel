@@ -14,18 +14,41 @@ function createNodeSettings(gui, renderer) {
   nodeSettings.add(currentNode, 'size', 0, 200).onChange(setSize);
   nodeSettings.add(currentNode, 'isPinned').onChange(setPinned);
 
-  return currentNode;
+  return {
+    setUI: setUI
+  };
+
+  function setUI(nodeUI) {
+    if (nodeUI)  {
+      currentNode.id = nodeUI.id;
+      currentNode.color = nodeUI.color;
+      currentNode.size = nodeUI.size;
+      var layout = renderer.layout();
+      if (layout && layout.pinNode) {
+        currentNode.isPinned = layout.pinNode(nodeUI.id);
+      }
+    } else {
+      currentNode.id = '';
+      currentNode.color = 0;
+      currentNode.size = 0;
+      currentNode.isPinned = false;
+    }
+    gui.update();
+  }
+
 
   function setColor() {
-    if (currentNode.id) {
-      renderer.nodeColor(currentNode.id, currentNode.color);
+    var node = renderer.getNode(currentNode.id);
+    if (node) {
+      node.color = currentNode.color;
       renderer.focus();
     }
   }
 
   function setSize() {
-    if (currentNode.id) {
-      renderer.nodeSize(currentNode.id, currentNode.size);
+    var node = renderer.getNode(currentNode.id);
+    if (node) {
+      node.size = currentNode.size;
       renderer.focus();
     }
   }

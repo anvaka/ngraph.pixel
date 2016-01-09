@@ -36,8 +36,8 @@
   },
   "devDependencies": {
     "browserify": "^9.0.8",
-    "config.pixel": "0.1.4",
-    "edgelegend": "0.1.3",
+    "config.pixel": "2.0.0",
+    "edgelegend": "2.0.0",
     "ngraph.generators": "0.0.16",
     "query-string": "^1.0.0"
   }

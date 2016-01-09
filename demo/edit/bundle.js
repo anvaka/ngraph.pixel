@@ -43,44 +43,11 @@ var createInput = require('./lib/input.js');
 var validateOptions = require('./options.js');
 var flyTo = require('./lib/flyTo.js');
 
+var makeActive = require('./lib/makeActive.js');
+
 function pixel(graph, options) {
   // This is our public API.
   var api = {
-    /**
-     * Set or get size of a node
-     *
-     * @param {string} nodeId identifier of a node in question
-     * @param {number+} size if undefined, then current node size is returned;
-     * Otherwise the new value is set.
-     */
-    nodeSize: nodeSize,
-
-    /**
-     * Set or get color of a node
-     *
-     * @param {string} nodeId identifier of a node in question
-     * @param {number+|Array} color rgb color hex code. If not specified, then current
-     * node color is returned. Otherwise the new color is assigned to the node.
-     * This value can also be an array of three arguments, in that case each element
-     * of the array is considered to be [r, g, b]
-     */
-    nodeColor: nodeColor,
-
-    /**
-     * Gets or sets color of a link
-     *
-     * @param {string|function} linkId identifier of a link.
-     * - If this argument is the only argument, then color of the link
-     *   { from: hexColor, to: hexColor } is returned.
-     * - If this argument is a function, then the it will be used as iterator
-     *   callback to get each link color. The only argument to this function is
-     *   `link` object. Expected output is { from: hexColor, to: hexColor }
-     * @param {number} fromColorHex - rgb color hex code of a link start
-     * @param {number+} toColorHex - rgb color hex code of theh link end. If not
-     * specified the same value as `fromColorHex` is used.
-     */
-    linkColor: linkColor,
-
     /**
      * attempts to fit graph into available screen size
      */
@@ -151,7 +118,39 @@ function pixel(graph, options) {
      * @param {number+} color if specified, then new color is set. Otherwise
      * returns current clear color.
      */
-    background: clearColor
+    background: clearColor,
+
+    /**
+     * Gets UI for a given node id. If node creation function decided not to
+     * return UI for this node, falsy object is returned.
+     *
+     * @param {string} nodeId - identifier of the node
+     * @returns Object that represents UI for the node
+     */
+    getNode: getNode,
+
+    /**
+     * Gets UI for a given link id. If link creation function decided not to
+     * return UI for this link, falsy object is returned.
+     *
+     * @param {string} linkId - identifier of the link
+     * @returns Object that represents UI for the link
+     */
+    getLink: getLink,
+
+    /**
+     * Iterates over every link UI element
+     *
+     * @param {Function} cb - link visitor. Accepts one argument, which is linkUI
+     */
+    forEachLink: forEachLink,
+
+    /**
+     * Iterates over every node UI element
+     *
+     * @param {Function} cb - node visitor. Accepts one argument, which is nodeUI
+     */
+    forEachNode: forEachNode
   };
 
   eventify(api);
@@ -167,13 +166,12 @@ function pixel(graph, options) {
     layout.on('reset', layoutReset);
   }
   var isStable = false;
-  var nodeIdToIdx = Object.create(null);
-  var edgeIdToIdx = Object.create(null);
-  var nodeIdxToId = [];
+  var nodeIdToIdx = new Map();
+  var edgeIdToIndex = new Map();
 
   var scene, camera, renderer;
   var nodeView, edgeView, autoFitController, input;
-  var nodePositions, edgePositions;
+  var nodes, edges;
   var tooltipView = createTooltipView(container);
 
   init();
@@ -206,6 +204,9 @@ function pixel(graph, options) {
     }
     if (!isStable) {
       isStable = layout.step();
+
+      updatePositions();
+
       nodeView.update();
       edgeView.update();
     } else {
@@ -218,6 +219,7 @@ function pixel(graph, options) {
     if (isStable) api.fire('stable', true);
 
     input.update();
+
     if (autoFitController) {
       autoFitController.update();
       input.adjustSpeed(autoFitController.lastRadius());
@@ -236,36 +238,67 @@ function pixel(graph, options) {
   }
 
   function listenToGraph() {
-    // TODO: this is not efficient at all. We are recriating view from scratch on
+    // TODO: this is not efficient at all. We are recreating view from scratch on
     // every single change.
     graph.on('changed', initPositions);
   }
 
+  function updatePositions() {
+    if (!nodes) return;
+
+    for (var i = 0; i < nodes.length; ++i) {
+      var node = nodes[i];
+      node.position = layout.getNodePosition(node.id);
+    }
+  }
+
   function initPositions() {
-    var idx = 0;
-    edgePositions = [];
-    nodePositions = [];
+    edges = [];
+    nodes = [];
+    nodeIdToIdx = new Map();
+    edgeIdToIndex = new Map();
     graph.forEachNode(addNodePosition);
     graph.forEachLink(addEdgePosition);
 
-    nodeView.initPositions(nodePositions);
-    edgeView.initPositions(edgePositions);
+    nodeView.init(nodes);
+    edgeView.init(edges);
 
     if (input) input.reset();
 
     function addNodePosition(node) {
+      var nodeModel = options.node(node);
+      if (!nodeModel) return;
+      var idx = nodes.length;
+
       var position = layout.getNodePosition(node.id);
       if (typeof position.z !== 'number') position.z = 0;
-      nodePositions.push(position);
-      nodeIdToIdx[node.id] = idx;
-      nodeIdxToId[idx] = node.id;
-      idx += 1;
+
+      nodeModel.id = node.id;
+      nodeModel.position = position;
+      nodeModel.idx = idx;
+
+      nodes.push(makeActive(nodeModel));
+
+      nodeIdToIdx.set(node.id, idx);
     }
 
     function addEdgePosition(edge) {
-      var edgeOffset = edgePositions.length;
-      edgeIdToIdx[edge.id] = edgeOffset;
-      edgePositions.push(nodePositions[nodeIdToIdx[edge.fromId]], nodePositions[nodeIdToIdx[edge.toId]]);
+      var edgeModel = options.link(edge);
+      if (!edgeModel) return;
+
+      var fromNode = nodes[nodeIdToIdx.get(edge.fromId)];
+      if (!fromNode) return; // cant have an edge that doesn't have a node
+
+      var toNode = nodes[nodeIdToIdx.get(edge.toId)];
+      if (!toNode) return;
+
+      edgeModel.idx = edges.length;
+      edgeModel.from = fromNode;
+      edgeModel.to = toNode;
+
+      edgeIdToIndex.set(edge.id, edgeModel.idx);
+
+      edges.push(makeActive(edgeModel));
     }
   }
 
@@ -301,78 +334,28 @@ function pixel(graph, options) {
     window.addEventListener('resize', onWindowResize, false);
   }
 
-  // TODO: looks like these node/links manipulation should be extracted into
-  // higher level API.
-  function nodeColor(nodeId, color) {
-    if (typeof nodeId === 'function') {
-      graph.forEachNode(getNodeColorFactory(nodeId));
-      return;
-    }
-    var idx = getNodeIdxByNodeId(nodeId);
-    return nodeView.color(idx, normalizeColor(color));
+  function getNode(nodeId) {
+    var idx = nodeIdToIdx.get(nodeId);
+    if (idx === undefined) return;
+
+    return nodes[idx];
   }
 
-  function getNodeColorFactory(setter) {
-    return function(node) {
-      var color = setter(node);
-      nodeColor(node.id, color);
-    };
+  function getLink(linkId) {
+    var idx = edgeIdToIndex.get(linkId);
+    if (idx === undefined) return;
+
+    return edges[idx];
   }
 
-  function nodeSize(nodeId, size) {
-    if (typeof nodeId === 'function') {
-      graph.forEachNode(getNodeSizeFactory(nodeId));
-      return;
-    }
-    var idx = getNodeIdxByNodeId(nodeId);
-    return nodeView.size(idx, size);
+  function forEachLink(cb) {
+    if (typeof cb !== 'function') throw new Error('link visitor should be a function');
+    edges.forEach(cb);
   }
 
-  function getNodeSizeFactory(setter) {
-    return function(node) {
-      var size = setter(node);
-      nodeSize(node.id, size);
-    };
-  }
-
-  function getNodeColorFactory(setter) {
-    return function(node) {
-      var color = setter(node);
-      nodeColor(node.id, color);
-    };
-  }
-
-  function linkColor(linkId, fromColorHex, toColorHex) {
-    if (typeof linkId === 'function') {
-      // This means that user passed a factory function to bulk-set colors of
-      // each link. We should iterate over every link and use result of the function
-      // to set color:
-      graph.forEachLink(getLinkColorFactory(linkId));
-      return;
-    }
-
-    var idx = edgeIdToIdx[linkId];
-    var idxValid = (0 <= idx && idx < edgePositions.length);
-    if (!idxValid) throw new Error('Link index is not valid ' + linkId);
-
-    if (fromColorHex === undefined) return edgeView.color(idx);
-    return edgeView.color(idx, normalizeColor(fromColorHex), normalizeColor(toColorHex));
-  }
-
-  function getLinkColorFactory(setter) {
-    return function(link) {
-      var color = setter(link);
-      linkColor(link.id, color.from, color.to);
-    };
-  }
-
-  function getNodeIdxByNodeId(nodeId) {
-    var idx = nodeIdToIdx[nodeId];
-    if (idx === undefined) throw new Error('Cannot find node with id ' + nodeId);
-    var idxValid = (0 <= idx && idx < graph.getNodesCount());
-    if (!idxValid) throw new Error('Node index is out of range' + nodeId);
-
-    return idx;
+  function forEachNode(cb) {
+    if (typeof cb !== 'function') throw new Error('node visitor should be a function');
+    nodes.forEach(cb);
   }
 
   function setTooltip(e) {
@@ -393,7 +376,8 @@ function pixel(graph, options) {
   }
 
   function getNodeByIndex(nodeIndex) {
-    return nodeIndex && graph.getNode(nodeIdxToId[nodeIndex]);
+    var nodeUI = nodes[nodeIndex];
+    return nodeUI && graph.getNode(nodeUI.id);
   }
 
   function stopAutoFit() {
@@ -465,7 +449,7 @@ function verifyContainerDimensions(container) {
   }
 }
 
-},{"./lib/autoFit.js":3,"./lib/edgeView.js":6,"./lib/flyTo.js":7,"./lib/input.js":9,"./lib/nodeView.js":13,"./lib/tooltip.js":14,"./options.js":77,"ngraph.events":44,"three":76}],3:[function(require,module,exports){
+},{"./lib/autoFit.js":3,"./lib/edgeView.js":6,"./lib/flyTo.js":7,"./lib/input.js":9,"./lib/makeActive.js":11,"./lib/nodeView.js":14,"./lib/tooltip.js":15,"./options.js":77,"ngraph.events":44,"three":76}],3:[function(require,module,exports){
 var flyTo = require('./flyTo.js');
 module.exports = createAutoFit;
 
@@ -521,27 +505,33 @@ function createParticleMaterial() {
   return material;
 }
 
-},{"./defaultTexture.js":5,"./node-fragment.js":11,"./node-vertex.js":12,"three":76}],5:[function(require,module,exports){
+},{"./defaultTexture.js":5,"./node-fragment.js":12,"./node-vertex.js":13,"three":76}],5:[function(require,module,exports){
 module.exports = 'data:image/png;base64,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';
 
 },{}],6:[function(require,module,exports){
 var THREE = require('three');
-var getHexColor = require('./utils.js').getHexColor;
 
 module.exports = edgeView;
 
 function edgeView(scene) {
   var total = 0;
-  var positions; // positions of each edge in the graph (array of objects pairs from, to)
+  var edges; // edges of the graph
   var colors, points; // buffer attributes that represent edge.
   var geometry, edgeMesh;
-  var colorDirty;
+  var colorDirty, positionDirty;
+
+  // declares bindings between model events and update handlers
+  var edgeConnector = {
+    fromColor: fromColor,
+    toColor: toColor,
+    'from.position': fromPosition,
+    'to.position': toPosition
+  };
 
   return {
-    initPositions: initPositions,
+    init: init,
     update: update,
-    needsUpdate: needsUpdate,
-    color: color
+    needsUpdate: needsUpdate
   };
 
   function needsUpdate() {
@@ -549,39 +539,40 @@ function edgeView(scene) {
   }
 
   function update() {
-    for (var i = 0; i < total; ++i) {
-      updateEdgePosition(i);
+    if (positionDirty) {
+      geometry.getAttribute('position').needsUpdate = true;
+      positionDirty = false;
     }
-    geometry.getAttribute('position').needsUpdate = true;
+
     if (colorDirty) {
       geometry.getAttribute('color').needsUpdate = true;
       colorDirty = false;
     }
   }
 
-  function color(idx, fromColorHex, toColorHex) {
-    if (fromColorHex === undefined) {
-      var idx6 = idx * 6;
-      return {
-        from: getHexColor(colors,  idx6),
-        to: getHexColor(colors, idx6 + 3)
-      };
-    }
+  function init(edgeCollection) {
+    disconnectOldEdges();
 
-    updateEdgeColor(idx/2, fromColorHex, toColorHex);
-  }
+    edges = edgeCollection;
+    total = edges.length;
 
-  function initPositions(edgePositions) {
-    positions = edgePositions;
-    total = positions.length/2;
-    points = new Float32Array(total * 6);
+    // If we can reuse old arrays - reuse them:
+    var pointsInitialized = (points !== undefined) && points.length === total * 6;
+    if (!pointsInitialized) points = new Float32Array(total * 6);
     var colorsInitialized = (colors !== undefined) && colors.length === total * 6;
     if (!colorsInitialized) colors = new Float32Array(total * 6);
 
     for (var i = 0; i < total; ++i) {
-      updateEdgePosition(i);
-      if (!colorsInitialized) updateEdgeColor(i);
+      var edge = edges[i];
+      edge.connect(edgeConnector);
+
+      fromPosition(edge);
+      toPosition(edge);
+
+      fromColor(edge);
+      toColor(edge);
     }
+
     geometry = new THREE.BufferGeometry();
     var material = new THREE.LineBasicMaterial({
       vertexColors: THREE.VertexColors
@@ -599,14 +590,28 @@ function edgeView(scene) {
     scene.add(edgeMesh);
   }
 
-  function updateEdgeColor(i, fromColorHex, toColorHex) {
-    if (typeof fromColorHex !== 'number') fromColorHex = 0xffffff;
-    if (typeof toColorHex !== 'number') toColorHex = fromColorHex;
-    var i6 = i * 6;
+  function disconnectOldEdges() {
+    if (!edges) return;
+    for (var i = 0; i < edges.length; ++i) {
+      edges[i].disconnect(edgeConnector);
+    }
+  }
+
+  function fromColor(edge) {
+    var fromColorHex = edge.fromColor;
+
+    var i6 = edge.idx * 6;
 
     colors[i6    ] = ((fromColorHex >> 16) & 0xFF)/0xFF;
     colors[i6 + 1] = ((fromColorHex >> 8) & 0xFF)/0xFF;
     colors[i6 + 2] = (fromColorHex & 0xFF)/0xFF;
+
+    colorDirty = true;
+  }
+
+  function toColor(edge) {
+    var toColorHex = edge.toColor;
+    var i6 = edge.idx * 6;
 
     colors[i6 + 3] = ((toColorHex >> 16) & 0xFF)/0xFF;
     colors[i6 + 4] = ((toColorHex >> 8) & 0xFF)/0xFF;
@@ -615,20 +620,30 @@ function edgeView(scene) {
     colorDirty = true;
   }
 
-  function updateEdgePosition(i) {
-    var from = positions[2 * i];
-    var to = positions[2 * i + 1];
-    var i6 = i * 6;
+  function fromPosition(edge) {
+    var from = edge.from.position;
+    var i6 = edge.idx * 6;
+
     points[i6] = from.x;
     points[i6 + 1] = from.y;
     points[i6 + 2] = from.z;
+
+    positionDirty = true;
+  }
+
+  function toPosition(edge) {
+    var to = edge.to.position;
+    var i6 = edge.idx * 6;
+
     points[i6 + 3] = to.x;
     points[i6 + 4] = to.y;
     points[i6 + 5] = to.z;
+
+    positionDirty = true;
   }
 }
 
-},{"./utils.js":15,"three":76}],7:[function(require,module,exports){
+},{"three":76}],7:[function(require,module,exports){
 /**
  * Moves camera to given point, and stops it and given radius
  */
@@ -1013,6 +1028,135 @@ function intersect(from, to, r) {
 }
 
 },{}],11:[function(require,module,exports){
+// This module allows to replace object properties with getters/setters,
+// so consumers can "connect" to them and be notified when properties are
+// updated.
+module.exports = makeActive;
+
+function makeActive(model) {
+  if (!model) throw new Error('Model is required to be an object');
+  if (typeof model.connect === 'function') throw new Error('connect() alread exists on model');
+  if (typeof model.disconnect === 'function') throw new Error('disconnect() alread exists on model');
+
+  var connected = new Map();
+
+  model.connect = connect;
+  model.disconnect = disconnect;
+
+  return model;
+
+  function replaceProperty(name) {
+    var propertyDescriptor = Object.getOwnPropertyDescriptor(model, name);
+    if (!propertyDescriptor) return false; // there is no such name!
+    if (propertyDescriptor && typeof propertyDescriptor.get === 'function') return true; // Already replaced
+
+    var value = model[name];
+
+    Object.defineProperty(model, name, {
+      get: function() { return value; },
+      set: function(v) {
+        value = v;
+        triggerListeners(name);
+      }
+    });
+
+    return true;
+  }
+
+  function triggerListeners(name) {
+    var myListeners = connected.get(name);
+    if (!myListeners) return;
+
+    myListeners.forEach(function(listener) {
+      listener(model);
+    });
+  }
+
+  function connect(key, cb) {
+    if (typeof key === 'string') {
+      connectSingleKey(key, cb);
+      return;
+    }
+
+    var query = key;
+
+    Object.keys(key).forEach(connectOneKey);
+
+    function connectOneKey(keyName) {
+      connectSingleKey(keyName, query[keyName]);
+    }
+  }
+
+  function connectSingleKey(key, cb) {
+    var parts = key.split('.');
+    var myListeners = connected.get(key);
+
+    if (!myListeners) {
+      var propertyCreated = replaceProperty(parts[0]);
+      if (!propertyCreated) {
+        console.error('trying to connect to property ' + parts[0] + ' that is not part of the model');
+        return;
+      }
+
+      myListeners = new Set();
+      connected.set(key, myListeners);
+    }
+
+    if (parts.length === 1) {
+      myListeners.add(cb);
+    } else {
+      // handling case for composite path. E.g.:
+      //  model.connect('from.position', cb)
+      // this means that consumer wants to be notified when from.position
+      // has changed
+      var connector = model[parts[0]];
+      var rest = parts.slice(1).join('.');
+
+      // remember the original function, so that we can find and delete it on disconnect
+      forwardModel.cb = cb;
+      myListeners.add(forwardModel);
+
+      // forward connection to request to property:
+      connector.connect(rest, forwardModel);
+    }
+
+    function forwardModel(/* subModel */) {
+      // todo: this could probably use model from sub properties...
+      cb(model);
+    }
+  }
+
+  function disconnect(key, cb) {
+    if (typeof key === 'string') return deleteSingleKey(key, cb);
+
+    Object.keys(key).forEach(function(name) {
+      deleteSingleKey(name, key[name]);
+    });
+  }
+
+  function deleteSingleKey(key, cb) {
+    var myListeners = connected.get(key);
+    // todo: composite?
+    if (!myListeners) return;
+    if (myListeners.delete(cb)) return; // callback was succesfully deleted
+    // otherwise let's check if we are in composite mode:
+    var parts = key.split('.');
+    if (parts.length === 1) return; // no, we are not in composite, just have no such listener
+
+    // yes, we are in composite key. Need to iterate all subscribers to find
+    // which one is trying to disconnect
+    var found;
+    myListeners.forEach(function(subscriber) {
+      if (subscriber.cb === cb) {
+        found = subscriber;
+      }
+    });
+
+    if (found) myListeners.delete(found);
+  }
+}
+
+},{}],12:[function(require,module,exports){
 module.exports = [
   'uniform vec3 color;',
   'uniform sampler2D texture;',
@@ -1027,7 +1171,7 @@ module.exports = [
   '}'
 ].join('\n');
 
-},{}],12:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
 module.exports = [
 'attribute float size;',
 'attribute vec3 customColor;',
@@ -1042,61 +1186,67 @@ module.exports = [
 '}'
 ].join('\n');
 
-},{}],13:[function(require,module,exports){
+},{}],14:[function(require,module,exports){
 var THREE = require('three');
 var particleMaterial = require('./createMaterial.js')();
-var getHexColor = require('./utils.js').getHexColor;
-
-// Default UI for node
-var SIZE = 20;
-var COLOR = 0xFF0894;
 
 module.exports = nodeView;
 
 function nodeView(scene) {
   var total;
-  var positions;
+  var nodes;
   var colors, points, sizes;
   var geometry, particleSystem;
-  var colorDirty, sizeDirty;
+  var colorDirty, sizeDirty, positionDirty;
 
-  return {
-    initPositions: initPositions,
-    update: update,
-    needsUpdate: needsUpdate,
-    getBoundingSphere: getBoundingSphere,
+  // declares bindings between node properties to functions within current view
+  var nodeConnector = {
+    position: position,
     color: color,
     size: size
+  };
+
+  return {
+    init: init,
+    update: update,
+    needsUpdate: needsUpdate,
+    getBoundingSphere: getBoundingSphere
   };
 
   function needsUpdate() {
     return colorDirty || sizeDirty;
   }
 
-  function color(idx, hexColor) {
-    var idx3 = idx * 3;
-    if (hexColor === undefined) {
-      return getHexColor(colors, idx3);
-    }
+  function color(node) {
+    var idx3 = node.idx * 3;
+    var hexColor = node.color;
     colors[idx3    ] = (hexColor >> 16) & 0xff;
     colors[idx3 + 1] = (hexColor >>  8) & 0xff;
     colors[idx3 + 2] = (hexColor      ) & 0xff;
     colorDirty = true;
   }
 
-  function size(idx, sizeValue) {
-    if (sizeValue === undefined) {
-      return sizes[idx];
-    }
-    sizes[idx] = sizeValue;
+  function size(node) {
+    sizes[node.idx] = node.size;
     sizeDirty = true;
   }
 
+  function position(node) {
+    var idx3 = node.idx * 3;
+    var pos = node.position;
+
+    points[idx3 + 0] = pos.x;
+    points[idx3 + 1] = pos.y;
+    points[idx3 + 2] = pos.z;
+
+    positionDirty = true;
+  }
+
   function update() {
-    for (var i = 0; i < total; ++i) {
-      setNodePosition(i * 3, positions[i]);
+    if (positionDirty) {
+      geometry.getAttribute('position').needsUpdate = true;
+      positionDirty = false;
     }
-    geometry.getAttribute('position').needsUpdate = true;
     if (colorDirty) {
       geometry.getAttribute('customColor').needsUpdate = true;
       colorDirty = false;
@@ -1113,19 +1263,16 @@ function nodeView(scene) {
     return geometry.boundingSphere;
   }
 
-  function setNodePosition(nodeIdx, pos) {
-    points[nodeIdx + 0] = pos.x;
-    points[nodeIdx + 1] = pos.y;
-    points[nodeIdx + 2] = pos.z;
-  }
+  function init(nodeCollection) {
+    disconnectOldNodes();
 
-  function initPositions(nodePositions) {
-    total = nodePositions.length;
-    positions = nodePositions;
-    points = new Float32Array(total * 3);
+    total = nodeCollection.length;
+    nodes = nodeCollection;
+    // if we can ruse old arrays - do it! No need to stress the GC
+    var pointsInitialized = points !== undefined && points.length === total * 3;
+    if (!pointsInitialized) points = new Float32Array(total * 3);
     var colorsInitialized = colors !== undefined && colors.length === total * 3;
     if (!colorsInitialized) colors = new Float32Array(total * 3);
-
     var sizesInitialized = sizes !== undefined && sizes.length === total;
     if (!sizesInitialized) sizes = new Float32Array(total);
 
@@ -1146,14 +1293,27 @@ function nodeView(scene) {
     scene.add(particleSystem);
 
     for (var i = 0; i < total; ++i) {
-      setNodePosition(i * 3, positions[i]);
-      if (!colorsInitialized) color(i, COLOR);
-      if (!sizesInitialized) size(i, SIZE);
+      var node = nodes[i];
+      // first make sure any update to underlying node properties result in
+      // graph update:
+      node.connect(nodeConnector);
+
+      // then invoke first-time node rendering
+      position(node);
+      color(node);
+      size(node);
+    }
+  }
+
+  function disconnectOldNodes() {
+    if (!nodes) return;
+    for (var i = 0; i < nodes.length; ++i) {
+      nodes[i].disconnect(nodeConnector);
     }
   }
 }
 
-},{"./createMaterial.js":4,"./utils.js":15,"three":76}],14:[function(require,module,exports){
+},{"./createMaterial.js":4,"three":76}],15:[function(require,module,exports){
 /**
  * manages view for tooltips shown when user hover over a node
  */
@@ -1198,19 +1358,7 @@ function createTooltipView(container) {
   }
 }
 
-},{"../style/style.js":78,"element-class":20,"insert-css":43}],15:[function(require,module,exports){
-module.exports = {
-  getHexColor: getHexColor
-};
-
-function getHexColor(buffer, idx) {
-  var r = buffer[idx    ];
-  var g = buffer[idx + 1];
-  var b = buffer[idx + 2];
-  return (r << 16) | (g << 8) | b;
-}
-
-},{}],16:[function(require,module,exports){
+},{"../style/style.js":78,"element-class":20,"insert-css":43}],16:[function(require,module,exports){
 /**
  * Controls physics engine settings, like spring length, drag coefficient, etc.
  *
@@ -1424,10 +1572,10 @@ function addGlobalViewSettings(settings) {
   var folder = gui.addFolder('View Settings');
 
   var model = {
-    nodeColor: [0xff, 0xff, 0xff],
-    backgroundColor: [0x00, 0x00, 0x00],
-    linkStartColor: [0x33, 0x33, 0x33],
-    linkEndColor: [0x33, 0x33, 0x33],
+    nodeColor: 0xffffff,
+    backgroundColor: 0x000000,
+    linkStartColor: 0x333333,
+    linkEndColor: 0x333333,
     nodeSize: 15,
     stable: changeStable
   };
@@ -1455,12 +1603,11 @@ function addGlobalViewSettings(settings) {
   }
 
   function setNodeColor() {
-    var graph = renderer.graph();
-    graph.forEachNode(setCustomNodeColor);
+    renderer.forEachNode(setCustomNodeColor);
     renderer.focus();
 
-    function setCustomNodeColor(node) {
-      renderer.nodeColor(node.id, model.nodeColor);
+    function setCustomNodeColor(ui) {
+      ui.color = model.nodeColor;
     }
   }
 
@@ -1469,23 +1616,22 @@ function addGlobalViewSettings(settings) {
   }
 
   function setNodeSize() {
-    var graph = renderer.graph();
-    graph.forEachNode(setCustomNodeSize);
+    renderer.forEachNode(setCustomNodeSize);
     renderer.focus();
 
-    function setCustomNodeSize(node) {
-      renderer.nodeSize(node.id, model.nodeSize);
+    function setCustomNodeSize(ui) {
+      ui.size = model.nodeSize;
     }
   }
 
   function setLinkColor() {
-    var graph = renderer.graph();
-    graph.forEachLink(setCustomLinkUI);
+    renderer.forEachLink(setCustomLinkUI);
     renderer.focus();
   }
 
-  function setCustomLinkUI(link) {
-    renderer.linkColor(link.id, model.linkStartColor, model.linkEndColor);
+  function setCustomLinkUI(ui) {
+    ui.fromColor = model.linkStartColor;
+    ui.toColor = model.linkEndColor;
   }
 }
 
@@ -1541,7 +1687,12 @@ function createLegend(allSettings, folderName, legend) {
       for (var i = 0; i < legend.length; ++i) {
         var item = legend[i];
         if (!item.filter(link)) continue;
-        renderer.linkColor(link.id, model[item.name]);
+        var ui = renderer.getLink(link.id);
+        if (ui) {
+          ui.fromColor = model[item.name];
+          ui.toColor = model[item.name];
+        }
+        return;
       }
     }
   }
@@ -45568,7 +45719,25 @@ function validateOptions(options) {
    */
   options.createLayout = typeof options.createLayout === 'function' ? options.createLayout : createLayout;
 
+  /**
+   * Experimental API: How link should be rendered?
+   */
+  options.link = typeof options.link === 'function' ? options.link : defaultLink;
+
+  /**
+   * Experimental API: How node should be rendered?
+   */
+  options.node = typeof options.node === 'function' ? options.node : defaultNode;
+
   return options;
+}
+
+function defaultNode(/* node */) {
+  return { size: 20, color: 0xFF0894 };
+}
+
+function defaultLink(/* link */) {
+  return { fromColor: 0xFFFFFF,  toColor: 0xFFFFFF };
 }
 
 },{"pixel.layout":73}],78:[function(require,module,exports){

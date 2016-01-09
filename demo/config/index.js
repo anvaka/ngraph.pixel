@@ -13,14 +13,8 @@ var nodeSettings = addCurrentNodeSettings(gui, renderer);
 renderer.on('nodeclick', showNodeDetails);
 
 function showNodeDetails(node) {
-  nodeSettings.id = node.id;
-  nodeSettings.color = renderer.nodeColor(node.id);
-  nodeSettings.size = renderer.nodeSize(node.id);
-  var layout = renderer.layout();
-  if (layout && layout.pinNode) {
-    nodeSettings.isPinned = layout.pinNode(node.id);
-  }
-  gui.update();
+  var nodeUI = renderer.getNode(node.id);
+  nodeSettings.setUI(nodeUI);
 }
 
 function getGraphFromQueryString(query) {

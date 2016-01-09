@@ -1,28 +1,29 @@
 var query = require('query-string').parse(window.location.search.substring(1));
 var graph = getGraphFromQueryString(query);
 
-var nodeColor = Object.create(null);
 var renderGraph = require('../../');
 
-var renderer = renderGraph(graph);
-graph.forEachNode(setCustomNodeUI);
-graph.forEachLink(setCustomLinkUI);
+renderGraph(graph, {
+  link: renderLink,
+  node: renderNode
+});
 
-function setCustomNodeUI(node) {
-  // we are going to remember node colors, so that edges can get same color as well:
-  var color = nodeColor[node.id] = Math.random() * 0xFFFFFF | 0;
-  renderer.nodeColor(node.id, color);
-  renderer.nodeSize(node.id, Math.random() * 21 + 10);
+function renderNode(/* node */) {
+  return {
+    color: Math.random() * 0xFFFFFF | 0,
+    size: Math.random() * 21 + 10
+  };
 }
 
-function setCustomLinkUI(link) {
-  var fromColor = nodeColor[link.fromId];
-  var toColor = nodeColor[link.toId];
-  renderer.linkColor(link.id, fromColor, toColor);
+function renderLink(/* link */) {
+  return {
+    fromColor: 0xFF0000,
+    toColor: 0x00FF00
+  };
 }
 
 function getGraphFromQueryString(query) {
-   var graphGenerators = require('ngraph.generators');
+  var graphGenerators = require('ngraph.generators');
   var createGraph = graphGenerators[query.graph] || graphGenerators.grid;
   return createGraph(getNumber(query.n), getNumber(query.m), getNumber(query.k));
 }

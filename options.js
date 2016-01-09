@@ -32,5 +32,23 @@ function validateOptions(options) {
    */
   options.createLayout = typeof options.createLayout === 'function' ? options.createLayout : createLayout;
 
+  /**
+   * Experimental API: How link should be rendered?
+   */
+  options.link = typeof options.link === 'function' ? options.link : defaultLink;
+
+  /**
+   * Experimental API: How node should be rendered?
+   */
+  options.node = typeof options.node === 'function' ? options.node : defaultNode;
+
   return options;
+}
+
+function defaultNode(/* node */) {
+  return { size: 20, color: 0xFF0894 };
+}
+
+function defaultLink(/* link */) {
+  return { fromColor: 0xFFFFFF,  toColor: 0xFFFFFF };
 }
