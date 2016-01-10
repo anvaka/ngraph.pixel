@@ -20,7 +20,7 @@ var renderer = createRenderer(graph, {
     }
   }
 });
-
+```
 
 ## `linkColor()` is removed
 
