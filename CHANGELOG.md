@@ -20,19 +20,19 @@ var renderer = createRenderer(graph, {
     }
   }
 });
-
+```
 
 ## `linkColor()` is removed
 
 Use `fromColor`, `toColor` properties on link object itself.
 
-** Before **
+**Before**
 
 ``` js
 renderer.linkColor(link.id,  0xffffff, 0x000000);
 ```
 
-** After **
+**After**
 
 ``` js
 var ui = renderer.getLink(link.id);
@@ -44,14 +44,14 @@ ui.toColor = 0xffffff;
 
 Use UI properties instead.
 
-** Before **
+**Before**
 
 ``` js
 renderer.nodeSize(node.id, 20);
 renderer.nodeColor(node.id, 0xffffff);
 ```
 
-** after **
+**After**
 
 ```
 var ui = renderer.getNode(node.id);
