@@ -42,7 +42,7 @@ ui.toColor = 0xffffff;
 
 ## `nodeColor()`/`nodeSize()` is removed
 
-Use ui properties instead.
+Use UI properties instead.
 
 ** Before **
 

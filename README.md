@@ -62,7 +62,7 @@ renderer.off('nodehover', handler);
 
 ## custom node UI
 
-### How to set default node ui?
+### How to set default node UI?
 
 ``` js
 var graph = require('ngraph.graph')();
