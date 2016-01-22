@@ -4,7 +4,7 @@
   "description": "Fast graph renderer based on low level ShaderMaterial from three.js",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "tap test/*.js",
     "basic": "browserify demo/basic/index.js > demo/basic/bundle.js",
     "colors": "browserify demo/colors/index.js > demo/colors/bundle.js",
     "config": "browserify demo/config/index.js > demo/config/bundle.js",
@@ -39,6 +39,7 @@
     "config.pixel": "2.0.0",
     "edgelegend": "2.0.0",
     "ngraph.generators": "0.0.16",
-    "query-string": "^1.0.0"
+    "query-string": "^1.0.0",
+    "tap": "^5.1.1"
   }
 }
