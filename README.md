@@ -1,4 +1,4 @@
-# ngraph.pixel
+# ngraph.pixel [![Build Status](https://travis-ci.org/anvaka/ngraph.pixel.svg?branch=master)](https://travis-ci.org/anvaka/ngraph.pixel)
 
 Fast graph renderer based on low level ShaderMaterial from three.js
 
