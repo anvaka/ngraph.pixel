@@ -42,3 +42,34 @@ test('it can listen to nested objects', function(t) {
     t.end();
   }
 });
+
+test('it can listen to nested object parents', function(t) {
+  var obj = makeActive({ user: {name: 'John' }});
+  obj.connect('user', onNameChanged);
+  obj.user = {
+    name: 'Bob'
+  };
+
+  function onNameChanged(model) {
+    t.ok(model === obj, 'model is the same as source object');
+    t.equals(model.user.name, 'Bob', 'Name is changed');
+    t.end();
+  }
+});
+
+// TODO: Found a bug. This test is failing
+test('it can unsubscribe from nested objects', function(t) {
+  var calledCount = 0;
+  var obj = makeActive({ user: {name: 'John' }});
+  obj.connect('user.name', onNameChanged);
+  obj.user.name = 'Bob';
+  obj.disconnect('user.name', onNameChanged);
+  obj.user.name = 'Shmob';
+  t.equals(calledCount, 1, 'Called exactly once');
+  t.end();
+
+  function onNameChanged() {
+    calledCount += 1;
+    t.equals(calledCount, 1, 'Called once!');
+  }
+});
