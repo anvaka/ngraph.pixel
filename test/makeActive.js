@@ -57,7 +57,6 @@ test('it can listen to nested object parents', function(t) {
   }
 });
 
-// TODO: Found a bug. This test is failing
 test('it can unsubscribe from nested objects', function(t) {
   var calledCount = 0;
   var obj = makeActive({ user: {name: 'John' }});
