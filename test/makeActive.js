@@ -72,3 +72,31 @@ test('it can unsubscribe from nested objects', function(t) {
     t.equals(calledCount, 1, 'Called once!');
   }
 });
+
+test('it can listen to both nested and parent objects', function(t) {
+  var bobChanged = 0;
+  var userChanged = 0;
+  var obj = makeActive({ user: {name: 'John' }});
+  obj.connect({
+    'user.name': onBobChanged,
+    user: onUserChanged
+  });
+
+  obj.user.name = 'Bob';
+  obj.user = 'oops!'
+
+  t.equals(bobChanged, 1, 'bob called exactly once');
+  t.equals(userChanged, 1, 'user called exactly once');
+  t.end();
+
+  function onBobChanged() {
+    bobChanged += 1;
+    t.equals(bobChanged, 1, 'bob changed once');
+  }
+
+  function onUserChanged() {
+    userChanged += 1;
+    t.equals(userChanged, 1, 'user changed once');
+  }
+  t.end();
+});
