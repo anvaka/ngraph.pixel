@@ -240,6 +240,21 @@ graph.forEachLink(function (linkModel) {
 });
 ```
 
+## Layout
+
+### How to make 2d layout?
+``` js
+
+var graph = require('ngraph.graph')();
+var link = graph.addLink(2, 3);
+
+var renderGraph = require('ngraph.pixel');
+
+// By default the layout is 3D. To switch it to 2d mode:
+var renderer = renderGraph(graph, {
+  is3d: false
+});
+```
 
 # Feedback?
 This is very early version of the library and your feedback is very much appreciated.
