@@ -243,8 +243,8 @@ graph.forEachLink(function (linkModel) {
 ## Layout
 
 ### How to make 2d layout?
-``` js
 
+``` js
 var graph = require('ngraph.graph')();
 var link = graph.addLink(2, 3);
 
@@ -255,6 +255,28 @@ var renderer = renderGraph(graph, {
   is3d: false
 });
 ```
+
+### How to change layout forces configuration
+
+``` js
+var graph = require('ngraph.graph')();
+var link = graph.addLink(2, 3);
+
+var renderGraph = require('ngraph.pixel');
+
+// pass physics property to the options; See more information here: 
+// https://github.com/anvaka/ngraph.forcelayout#configuring-physics
+var renderer = renderGraph(graph, {
+  physics: {
+    springLength : 80,
+    springCoeff : 0.0002,
+    gravity: -1.2,
+    theta : 0.8,
+    dragCoeff : 0.02
+  }
+});
+```
+
 
 # Feedback?
 This is very early version of the library and your feedback is very much appreciated.
