@@ -799,8 +799,9 @@ function createHitTest(domElement) {
   }
 
   function setMouseCoordinates(e) {
-    mouse.x = (e.clientX / domElement.clientWidth) * 2 - 1;
-    mouse.y = -(e.clientY / domElement.clientHeight) * 2 + 1;
+    var boundingRect = domElement.getBoundingClientRect();
+    mouse.x = ((e.pageX - boundingRect.left) / boundingRect.width) * 2 - 1;
+    mouse.y = -((e.pageY - boundingRect.top) / boundingRect.height) * 2 + 1;
 
     domMouse.x = e.clientX;
     domMouse.y = e.clientY;
@@ -1120,6 +1121,9 @@ function makeActive(model) {
       myListeners.add(forwardModel);
 
       // forward connection to request to property:
+      if (typeof connector.connect !== 'function') {
+        makeActive(connector);
+      }
       connector.connect(rest, forwardModel);
     }
 
@@ -1155,7 +1159,15 @@ function makeActive(model) {
       }
     });
 
-    if (found) myListeners.delete(found);
+    if (found) {
+      // first delete it from our level of listeners
+      myListeners.delete(found);
+
+      // then forward disconnect request to the child models:
+      var connector = model[parts[0]];
+      var rest = parts.slice(1).join('.');
+      connector.disconnect(rest, found);
+    }
   }
 }
 
