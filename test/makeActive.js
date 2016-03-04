@@ -98,5 +98,4 @@ test('it can listen to both nested and parent objects', function(t) {
     userChanged += 1;
     t.equals(userChanged, 1, 'user changed once');
   }
-  t.end();
 });
