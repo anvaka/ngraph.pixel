@@ -1,6 +1,15 @@
-module.exports = pixel;
 var THREE = require('three');
+
+module.exports = pixel;
+
+/**
+ * Expose to the outter world instance of three.js
+ * so that they can use it if they need it
+ */
+module.exports.THREE = THREE;
+
 var eventify = require('ngraph.events');
+
 var createNodeView = require('./lib/nodeView.js');
 var createEdgeView = require('./lib/edgeView.js');
 var createTooltipView = require('./lib/tooltip.js');
@@ -116,7 +125,12 @@ function pixel(graph, options) {
      *
      * @param {Function} cb - node visitor. Accepts one argument, which is nodeUI
      */
-    forEachNode: forEachNode
+    forEachNode: forEachNode,
+
+    /**
+     * Gets three.js scene where current graph is rendered
+     */
+    scene: getScene
   };
 
   eventify(api);
@@ -191,6 +205,10 @@ function pixel(graph, options) {
       input.adjustSpeed(autoFitController.lastRadius());
     }
     renderer.render(scene, camera);
+  }
+
+  function getScene() {
+    return scene;
   }
 
   function beforeFrame(newBeforeFrameCallback) {
