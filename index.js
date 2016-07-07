@@ -88,6 +88,14 @@ function pixel(graph, options) {
     clearColor: clearColor,
 
     /**
+     * Allows clients to set/get current clear color opacity
+     *
+     * @param {number+} alpha if specified, then new alpha opacity is set. Otherwise
+     * returns current clear color alpha.
+     */
+    clearAlpha: clearAlpha,
+
+    /**
      * Synonmim for `clearColor`. Sets the background color of the scene
      *
      * @param {number+} color if specified, then new color is set. Otherwise
@@ -174,6 +182,12 @@ function pixel(graph, options) {
     if (typeof newColor !== 'number') return renderer.getClearColor();
 
     renderer.setClearColor(newColor);
+  }
+
+  function clearAlpha(newAlpha) {
+    if (typeof newAlpha !== 'number') return renderer.getClearAlpha();
+
+    renderer.setClearAlpha(newAlpha);
   }
 
   function run() {
@@ -301,11 +315,16 @@ function pixel(graph, options) {
 
     if (options.autoFit) autoFitController = createAutoFit(nodeView, camera);
 
-    renderer = new THREE.WebGLRenderer({
-      antialias: false
-    });
+    var glOptions = {
+      antialias: false,
+    };
+    if (options.clearAlpha !== 1) {
+      glOptions.alpha = true;
+    }
 
-    renderer.setClearColor(options.clearColor, 1);
+    renderer = new THREE.WebGLRenderer(glOptions);
+
+    renderer.setClearColor(options.clearColor, options.clearAlpha);
     renderer.setSize(container.clientWidth, container.clientHeight);
     container.appendChild(renderer.domElement);
 

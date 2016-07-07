@@ -25,6 +25,12 @@ function validateOptions(options) {
    */
   options.clearColor = typeof options.clearColor === 'number' ? options.clearColor : 0x000000;
 
+
+  /**
+   * Clear color opacity from 0 (transparent) to 1 (opaque); Default value is 1;
+   */
+  options.clearAlpha = typeof options.clearAlpha === 'number' ? options.clearAlpha : 1;
+
   /**
    * Layout algorithm factory. Valid layout algorithms are required to have just two methods:
    * `getNodePosition(nodeId)` and `step()`. See `pixel.layout` module for the
