@@ -49,6 +49,8 @@ function render(data) {
 
     layout.setNodePosition(label, x, y, z);
   });
+
+  renderer.redraw();
 }
 
 function initGraphFromLinksAndLabels(links, labels) {

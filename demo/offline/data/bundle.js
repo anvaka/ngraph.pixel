@@ -72,6 +72,8 @@ function render(data) {
 
     layout.setNodePosition(label, x, y, z);
   });
+
+  renderer.redraw();
 }
 
 function initGraphFromLinksAndLabels(links, labels) {
@@ -907,10 +909,16 @@ function pixel(graph, options) {
      */
     scene: getScene,
 
+    /**
+     * Forces renderer to update scene, without waiting for notifications
+     * from layouter
+     */
+    redraw: redraw,
+
     // Low level methods to get edgeView/nodeView.
     // TODO: update docs if this sticks.
     edgeView: getEdgeView,
-    nodeView: getNodeView,
+    nodeView: getNodeView
   };
 
   eventify(api);
@@ -955,6 +963,11 @@ function pixel(graph, options) {
 
   function getNodeView() {
     return nodeView;
+  }
+
+  function redraw() {
+    edgeView.refresh();
+    nodeView.refresh();
   }
 
   function clearColor(newColor) {
@@ -1326,11 +1339,12 @@ function edgeView(scene, options) {
     setFromColor: fromColor,
     setToColor: toColor,
     setFromPosition: fromPosition,
-    setToPosition: toPosition
+    setToPosition: toPosition,
+    refresh: refresh
   };
 
   function needsUpdate() {
-    return colorDirty;
+    return colorDirty || positionDirty;
   }
 
   function update() {
@@ -1383,6 +1397,18 @@ function edgeView(scene, options) {
     edgeMesh = new THREE.LineSegments(geometry, material);
     edgeMesh.frustumCulled = false;
     scene.add(edgeMesh);
+  }
+
+  function refresh() {
+    for (var i = 0; i < total; ++i) {
+      var edge = edges[i];
+
+      fromPosition(edge);
+      toPosition(edge);
+
+      fromColor(edge);
+      toColor(edge);
+    }
   }
 
   function disconnectOldEdges() {
@@ -2021,11 +2047,12 @@ function nodeView(scene, options) {
     getBoundingSphere: getBoundingSphere,
     setNodePosition: position,
     setNodeColor: color,
-    setNodeSize: size
+    setNodeSize: size,
+    refresh: refresh
   };
 
   function needsUpdate() {
-    return colorDirty || sizeDirty;
+    return colorDirty || sizeDirty || positionDirty;
   }
 
   function color(node) {
@@ -2108,8 +2135,17 @@ function nodeView(scene, options) {
       // first make sure any update to underlying node properties result in
       // graph update:
       if (options.activeNode) node.connect(nodeConnector);
+    }
 
-      // then invoke first-time node rendering
+    refresh();
+  }
+
+  /**
+   * Forces renderer to refresh positions/colors/sizes for each model.
+   */
+  function refresh() {
+    for (var i = 0; i < total; ++i) {
+      var node = nodes[i];
       position(node);
       color(node);
       size(node);
