@@ -140,10 +140,16 @@ function pixel(graph, options) {
      */
     scene: getScene,
 
+    /**
+     * Forces renderer to update scene, without waiting for notifications
+     * from layouter
+     */
+    redraw: redraw,
+
     // Low level methods to get edgeView/nodeView.
     // TODO: update docs if this sticks.
     edgeView: getEdgeView,
-    nodeView: getNodeView,
+    nodeView: getNodeView
   };
 
   eventify(api);
@@ -188,6 +194,11 @@ function pixel(graph, options) {
 
   function getNodeView() {
     return nodeView;
+  }
+
+  function redraw() {
+    edgeView.refresh();
+    nodeView.refresh();
   }
 
   function clearColor(newColor) {
