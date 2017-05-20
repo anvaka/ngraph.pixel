@@ -138,7 +138,12 @@ function pixel(graph, options) {
     /**
      * Gets three.js scene where current graph is rendered
      */
-    scene: getScene
+    scene: getScene,
+
+    // Low level methods to get edgeView/nodeView.
+    // TODO: update docs if this sticks.
+    edgeView: getEdgeView,
+    nodeView: getNodeView,
   };
 
   eventify(api);
@@ -175,6 +180,14 @@ function pixel(graph, options) {
 
   function getCamera() {
     return camera;
+  }
+
+  function getEdgeView() {
+    return edgeView;
+  }
+
+  function getNodeView() {
+    return nodeView;
   }
 
   function clearColor(newColor) {
@@ -275,7 +288,11 @@ function pixel(graph, options) {
       nodeModel.position = position;
       nodeModel.idx = idx;
 
-      nodes.push(makeActive(nodeModel));
+      if (options.activeNode) {
+        nodes.push(makeActive(nodeModel));
+      } else {
+        nodes.push(nodeModel);
+      }
 
       nodeIdToIdx.set(node.id, idx);
     }
@@ -296,7 +313,11 @@ function pixel(graph, options) {
 
       edgeIdToIndex.set(edge.id, edgeModel.idx);
 
-      edges.push(makeActive(edgeModel));
+      if (options.activeLink) {
+        edges.push(makeActive(edgeModel));
+      } else {
+        edges.push(edgeModel);
+      }
     }
   }
 
@@ -310,8 +331,8 @@ function pixel(graph, options) {
     camera.position.z = 200;
 
     scene.add(camera);
-    nodeView = createNodeView(scene);
-    edgeView = createEdgeView(scene);
+    nodeView = createNodeView(scene, options);
+    edgeView = createEdgeView(scene, options);
 
     if (options.autoFit) autoFitController = createAutoFit(nodeView, camera);
 

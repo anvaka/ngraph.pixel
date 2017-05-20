@@ -48,6 +48,22 @@ function validateOptions(options) {
    */
   options.node = typeof options.node === 'function' ? options.node : defaultNode;
 
+  /**
+   * Experimental API: When activeNode is explicitly set to false, then no proxy
+   * object is created. Which means actual updates to the node have to be manual
+   *
+   * TODO: Extend this documentation if this approach sticks.
+   */
+  options.activeNode = typeof options.activeNode === 'undefined' ? true : options.activeNode;
+
+  /**
+   * Experimental API: When activeLink is explicitly set to false, then no proxy
+   * object is created for links. Which means actual updates to the link have to be manual
+   *
+   * TODO: Extend this documentation if this approach sticks.
+   */
+  options.activeLink = typeof options.activeLink === 'undefined' ? true : options.activeLink;
+
   return options;
 }
 
