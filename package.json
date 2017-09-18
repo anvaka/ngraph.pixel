@@ -1,6 +1,6 @@
 {
   "name": "ngraph.pixel",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "description": "Fast graph renderer based on low level ShaderMaterial from three.js",
   "main": "index.js",
   "scripts": {
