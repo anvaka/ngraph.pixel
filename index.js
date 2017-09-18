@@ -357,6 +357,7 @@ function pixel(graph, options) {
     renderer = new THREE.WebGLRenderer(glOptions);
 
     renderer.setClearColor(options.clearColor, options.clearAlpha);
+    if (window && window.devicePixelRatio) renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(container.clientWidth, container.clientHeight);
     container.appendChild(renderer.domElement);
 
