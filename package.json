@@ -39,7 +39,7 @@
     "browserify": "^9.0.8",
     "config.pixel": "2.0.0",
     "edgelegend": "2.0.0",
-    "ngraph.generators": "0.0.16",
+    "ngraph.generators": "0.0.18",
     "query-string": "^1.0.0",
     "tap": "^5.1.1"
   }
