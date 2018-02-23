@@ -27,3 +27,7 @@ function getNumber(string, defaultValue) {
   var number = parseFloat(string);
   return (typeof number === 'number') && !isNaN(number) ? number : (defaultValue || 10);
 }
+
+var link = renderer.getLink(graph.addLink(0, 90).id);
+link.width = 10;
+link.fromColor = 0xFF0000;
