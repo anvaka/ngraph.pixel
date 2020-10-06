@@ -1,6 +1,9 @@
 # ngraph.pixel [![Build Status](https://travis-ci.org/anvaka/ngraph.pixel.svg?branch=master)](https://travis-ci.org/anvaka/ngraph.pixel)
 
-Fast graph renderer based on low level ShaderMaterial from three.js
+Fast graph renderer based on low level ShaderMaterial from three.js.
+
+*NOTE: please check [graph-start](https://github.com/anvaka/graph-start) repository
+with a fast way to bootstrap graph drawing application.*
 
 # usage
 
