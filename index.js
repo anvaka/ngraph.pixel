@@ -3,7 +3,7 @@ var THREE = require('three');
 module.exports = pixel;
 
 /**
- * Expose to the outter world instance of three.js
+ * Expose to the outer world instance of three.js
  * so that they can use it if they need it
  */
 module.exports.THREE = THREE;
@@ -54,7 +54,7 @@ function pixel(graph, options) {
     graph: graphInternal,
 
     /**
-     * Attempts to give keyboard input focuse to the scene
+     * Attempts to give keyboard input focus to the scene
      */
     focus: focus,
 
@@ -96,7 +96,7 @@ function pixel(graph, options) {
     clearAlpha: clearAlpha,
 
     /**
-     * Synonmim for `clearColor`. Sets the background color of the scene
+     * Synonym for `clearColor`. Sets the background color of the scene
      *
      * @param {number+} color if specified, then new color is set. Otherwise
      * returns current clear color.
@@ -142,7 +142,7 @@ function pixel(graph, options) {
 
     /**
      * Forces renderer to update scene, without waiting for notifications
-     * from layouter
+     * from layout
      */
     redraw: redraw,
 
