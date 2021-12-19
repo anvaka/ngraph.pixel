@@ -6,6 +6,7 @@
   "scripts": {
     "test": "tap test/*.js",
     "basic": "browserify demo/basic/index.js > demo/basic/bundle.js",
+    "hover": "browserify demo/hover-only/index.js > demo/hover-only/bundle.js",
     "background": "browserify demo/background/index.js > demo/background/bundle.js",
     "colors": "browserify demo/colors/index.js > demo/colors/bundle.js",
     "config": "browserify demo/config/index.js > demo/config/bundle.js",
