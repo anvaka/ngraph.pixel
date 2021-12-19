@@ -9,8 +9,10 @@ var renderer = renderGraph(graph, {
   },
   activeLink: false
 });
+
 renderer.on('nodehover', function(node) {
   if (node) {
+    // Mouse in - show connected only:
     var from = renderer.getNode(node.id)
     var idx = 0;
     var edges = [];
@@ -19,7 +21,7 @@ renderer.on('nodehover', function(node) {
       var to = renderer.getNode(other.id);
       edges.push({
         fromColor: 0xFFFFFF,
-        toColor: 0x6699aa,
+        toColor: 0xFFFFFF,
         idx: edges.length,
         from: from,
         to: to
@@ -28,9 +30,9 @@ renderer.on('nodehover', function(node) {
 
     renderer.edgeView().init(edges);
   } else {
+    // Mouse out - hide the edges
     renderer.edgeView().init([]);
   }
-  renderer.edgeView().refresh();
 });
 
 function getGraphFromQueryString(query) {
