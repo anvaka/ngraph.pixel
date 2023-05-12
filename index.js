@@ -321,6 +321,7 @@ function pixel(graph, options) {
       edgeModel.idx = edges.length;
       edgeModel.from = fromNode;
       edgeModel.to = toNode;
+      edgeModel.width = 1;
 
       edgeIdToIndex.set(edge.id, edgeModel.idx);
 

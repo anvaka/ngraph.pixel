@@ -29,6 +29,10 @@ function getNumber(string, defaultValue) {
   return (typeof number === 'number') && !isNaN(number) ? number : (defaultValue || 10);
 }
 
+var link = renderer.getLink(graph.addLink(0, 90).id);
+link.width = 10;
+link.fromColor = 0xFF0000;
+
 },{"../../":3,"./nodeSettings.js":2,"config.pixel":18,"ngraph.generators":53,"query-string":74}],2:[function(require,module,exports){
 module.exports = createNodeSettings;
 
@@ -100,9 +104,18 @@ function createNodeSettings(gui, renderer) {
 }
 
 },{}],3:[function(require,module,exports){
-module.exports = pixel;
 var THREE = require('three');
+
+module.exports = pixel;
+
+/**
+ * Expose to the outter world instance of three.js
+ * so that they can use it if they need it
+ */
+module.exports.THREE = THREE;
+
 var eventify = require('ngraph.events');
+
 var createNodeView = require('./lib/nodeView.js');
 var createEdgeView = require('./lib/edgeView.js');
 var createTooltipView = require('./lib/tooltip.js');
@@ -181,6 +194,14 @@ function pixel(graph, options) {
     clearColor: clearColor,
 
     /**
+     * Allows clients to set/get current clear color opacity
+     *
+     * @param {number+} alpha if specified, then new alpha opacity is set. Otherwise
+     * returns current clear color alpha.
+     */
+    clearAlpha: clearAlpha,
+
+    /**
      * Synonmim for `clearColor`. Sets the background color of the scene
      *
      * @param {number+} color if specified, then new color is set. Otherwise
@@ -218,7 +239,23 @@ function pixel(graph, options) {
      *
      * @param {Function} cb - node visitor. Accepts one argument, which is nodeUI
      */
-    forEachNode: forEachNode
+    forEachNode: forEachNode,
+
+    /**
+     * Gets three.js scene where current graph is rendered
+     */
+    scene: getScene,
+
+    /**
+     * Forces renderer to update scene, without waiting for notifications
+     * from layouter
+     */
+    redraw: redraw,
+
+    // Low level methods to get edgeView/nodeView.
+    // TODO: update docs if this sticks.
+    edgeView: getEdgeView,
+    nodeView: getNodeView
   };
 
   eventify(api);
@@ -257,11 +294,30 @@ function pixel(graph, options) {
     return camera;
   }
 
+  function getEdgeView() {
+    return edgeView;
+  }
+
+  function getNodeView() {
+    return nodeView;
+  }
+
+  function redraw() {
+    edgeView.refresh();
+    nodeView.refresh();
+  }
+
   function clearColor(newColor) {
     newColor = normalizeColor(newColor);
     if (typeof newColor !== 'number') return renderer.getClearColor();
 
     renderer.setClearColor(newColor);
+  }
+
+  function clearAlpha(newAlpha) {
+    if (typeof newAlpha !== 'number') return renderer.getClearAlpha();
+
+    renderer.setClearAlpha(newAlpha);
   }
 
   function run() {
@@ -293,6 +349,10 @@ function pixel(graph, options) {
       input.adjustSpeed(autoFitController.lastRadius());
     }
     renderer.render(scene, camera);
+  }
+
+  function getScene() {
+    return scene;
   }
 
   function beforeFrame(newBeforeFrameCallback) {
@@ -345,7 +405,11 @@ function pixel(graph, options) {
       nodeModel.position = position;
       nodeModel.idx = idx;
 
-      nodes.push(makeActive(nodeModel));
+      if (options.activeNode) {
+        nodes.push(makeActive(nodeModel));
+      } else {
+        nodes.push(nodeModel);
+      }
 
       nodeIdToIdx.set(node.id, idx);
     }
@@ -363,10 +427,15 @@ function pixel(graph, options) {
       edgeModel.idx = edges.length;
       edgeModel.from = fromNode;
       edgeModel.to = toNode;
+      edgeModel.width = 1;
 
       edgeIdToIndex.set(edge.id, edgeModel.idx);
 
-      edges.push(makeActive(edgeModel));
+      if (options.activeLink) {
+        edges.push(makeActive(edgeModel));
+      } else {
+        edges.push(edgeModel);
+      }
     }
   }
 
@@ -380,16 +449,22 @@ function pixel(graph, options) {
     camera.position.z = 200;
 
     scene.add(camera);
-    nodeView = createNodeView(scene);
-    edgeView = createEdgeView(scene);
+    nodeView = createNodeView(scene, options);
+    edgeView = createEdgeView(scene, options);
 
     if (options.autoFit) autoFitController = createAutoFit(nodeView, camera);
 
-    renderer = new THREE.WebGLRenderer({
-      antialias: false
-    });
+    var glOptions = {
+      antialias: false,
+    };
+    if (options.clearAlpha !== 1) {
+      glOptions.alpha = true;
+    }
 
-    renderer.setClearColor(options.clearColor, 1);
+    renderer = new THREE.WebGLRenderer(glOptions);
+
+    renderer.setClearColor(options.clearColor, options.clearAlpha);
+    if (window && window.devicePixelRatio) renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(container.clientWidth, container.clientHeight);
     container.appendChild(renderer.domElement);
 
@@ -517,7 +592,7 @@ function verifyContainerDimensions(container) {
   }
 }
 
-},{"./lib/autoFit.js":4,"./lib/edgeView.js":7,"./lib/flyTo.js":8,"./lib/input.js":10,"./lib/makeActive.js":12,"./lib/nodeView.js":15,"./lib/tooltip.js":16,"./options.js":78,"ngraph.events":44,"three":77}],4:[function(require,module,exports){
+},{"./lib/autoFit.js":4,"./lib/edgeView.js":7,"./lib/flyTo.js":8,"./lib/input.js":10,"./lib/makeActive.js":12,"./lib/nodeView.js":15,"./lib/tooltip.js":16,"./options.js":79,"ngraph.events":44,"three":78}],4:[function(require,module,exports){
 var flyTo = require('./flyTo.js');
 module.exports = createAutoFit;
 
@@ -573,93 +648,115 @@ function createParticleMaterial() {
   return material;
 }
 
-},{"./defaultTexture.js":6,"./node-fragment.js":13,"./node-vertex.js":14,"three":77}],6:[function(require,module,exports){
+},{"./defaultTexture.js":6,"./node-fragment.js":13,"./node-vertex.js":14,"three":78}],6:[function(require,module,exports){
 module.exports = 'data:image/png;base64,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';
 
 },{}],7:[function(require,module,exports){
 var THREE = require('three');
+var MeshLine = require('three.meshline');
 
 module.exports = edgeView;
 
-function edgeView(scene) {
+function edgeView(scene, options) {
   var total = 0;
   var edges; // edges of the graph
-  var colors, points; // buffer attributes that represent edge.
-  var geometry, edgeMesh;
-  var colorDirty, positionDirty;
+  var edgesMeshes = [];
+  var positionDirtyMeshes = [];
 
   // declares bindings between model events and update handlers
   var edgeConnector = {
+    width: toWidth,
     fromColor: fromColor,
-    toColor: toColor,
     'from.position': fromPosition,
-    'to.position': toPosition
+    'to.position': toPosition,
   };
 
   return {
     init: init,
     update: update,
-    needsUpdate: needsUpdate
+    needsUpdate: needsUpdate,
+    setFromColor: fromColor,
+    setFromPosition: fromPosition,
+    setToPosition: toPosition,
+    setWidth: toWidth,
+    refresh: refresh,
   };
 
   function needsUpdate() {
-    return colorDirty;
+    return positionDirtyMeshes.length > 0;
   }
 
   function update() {
-    if (positionDirty) {
-      geometry.getAttribute('position').needsUpdate = true;
-      positionDirty = false;
-    }
-
-    if (colorDirty) {
-      geometry.getAttribute('color').needsUpdate = true;
-      colorDirty = false;
+    if (positionDirtyMeshes.length > 0) {
+      for (var m = 0; m < positionDirtyMeshes.length; ++m){
+        var edgeMesh = edgesMeshes[positionDirtyMeshes[m]]
+        edgeMesh.line.setGeometry(edgeMesh.geo)
+      }
+      positionDirtyMeshes = [];
     }
   }
 
   function init(edgeCollection) {
     disconnectOldEdges();
-
     edges = edgeCollection;
     total = edges.length;
 
-    // If we can reuse old arrays - reuse them:
-    var pointsInitialized = (points !== undefined) && points.length === total * 6;
-    if (!pointsInitialized) points = new Float32Array(total * 6);
-    var colorsInitialized = (colors !== undefined) && colors.length === total * 6;
-    if (!colorsInitialized) colors = new Float32Array(total * 6);
-
     for (var i = 0; i < total; ++i) {
       var edge = edges[i];
-      edge.connect(edgeConnector);
+      if (options.activeLink) edge.connect(edgeConnector);
+
+      toWidth(edge);
 
       fromPosition(edge);
       toPosition(edge);
 
       fromColor(edge);
-      toColor(edge);
     }
 
-    geometry = new THREE.BufferGeometry();
-    var material = new THREE.LineBasicMaterial({
-      vertexColors: THREE.VertexColors
-    });
-
-    geometry.addAttribute('position', new THREE.BufferAttribute(points, 3));
-    geometry.addAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-    if (edgeMesh) {
-      scene.remove(edgeMesh);
+    if (edgesMeshes) {
+      for (var m = 0; m < edgesMeshes.length; ++m){
+        scene.remove(edgesMeshes[m]);
+      }
     }
+    edgesMeshes = [];
+    for (var e = 0; e < total; ++e) {
+      var geometry = new THREE.Geometry();
+      geometry.vertices.push(new THREE.Vector3(0,0,0));
+      geometry.vertices.push(new THREE.Vector3(0,0,0));
+      var line = new MeshLine.MeshLine();
+      line.setGeometry(geometry);
+      var material = new MeshLine.MeshLineMaterial({
+        useMap: false,
+        lineWidth:1,
+        opacity: 1,
+        color: new THREE.Color(0x333333),
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+        resolution: new THREE.Vector2( window.innerWidth, window.innerHeight )
+      });
+      edgesMeshes[e] = new THREE.Mesh( line.geometry, material );
+      edgesMeshes[e].geo = geometry;
+      edgesMeshes[e].line = line;
+      scene.add(edgesMeshes[e]);
+    }
+  }
 
-    edgeMesh = new THREE.LineSegments(geometry, material);
-    edgeMesh.frustumCulled = false;
-    scene.add(edgeMesh);
+  function refresh() {
+    for (var i = 0; i < total; ++i) {
+      var edge = edges[i];
+
+      toWidth(edge);
+
+      fromPosition(edge);
+      toPosition(edge);
+
+      fromColor(edge);
+    }
   }
 
   function disconnectOldEdges() {
     if (!edges) return;
+    if (!options.activeLink) return;
     for (var i = 0; i < edges.length; ++i) {
       edges[i].disconnect(edgeConnector);
     }
@@ -667,51 +764,39 @@ function edgeView(scene) {
 
   function fromColor(edge) {
     var fromColorHex = edge.fromColor;
-
-    var i6 = edge.idx * 6;
-
-    colors[i6    ] = ((fromColorHex >> 16) & 0xFF)/0xFF;
-    colors[i6 + 1] = ((fromColorHex >> 8) & 0xFF)/0xFF;
-    colors[i6 + 2] = (fromColorHex & 0xFF)/0xFF;
-
-    colorDirty = true;
-  }
-
-  function toColor(edge) {
-    var toColorHex = edge.toColor;
-    var i6 = edge.idx * 6;
-
-    colors[i6 + 3] = ((toColorHex >> 16) & 0xFF)/0xFF;
-    colors[i6 + 4] = ((toColorHex >> 8) & 0xFF)/0xFF;
-    colors[i6 + 5] = ( toColorHex & 0xFF)/0xFF;
-
-    colorDirty = true;
+    if(edge.idx <= edgesMeshes.length && undefined != edgesMeshes[edge.idx]) {
+      edgesMeshes[edge.idx].material.uniforms.color.value.r=((fromColorHex >> 16) & 0xFF)/0xFF;
+      edgesMeshes[edge.idx].material.uniforms.color.value.g=((fromColorHex >> 8) & 0xFF)/0xFF;
+      edgesMeshes[edge.idx].material.uniforms.color.value.b=(fromColorHex & 0xFF)/0xFF;
+    }
   }
 
   function fromPosition(edge) {
-    var from = edge.from.position;
-    var i6 = edge.idx * 6;
-
-    points[i6] = from.x;
-    points[i6 + 1] = from.y;
-    points[i6 + 2] = from.z;
-
-    positionDirty = true;
+    if(edge.idx <= edgesMeshes.length && undefined != edgesMeshes[edge.idx]) {
+      edgesMeshes[edge.idx].geo.vertices[0].x = edge.from.position.x
+      edgesMeshes[edge.idx].geo.vertices[0].y = edge.from.position.y
+      edgesMeshes[edge.idx].geo.vertices[0].z = edge.from.position.z
+      positionDirtyMeshes.push(edge.idx)
+    }
   }
 
   function toPosition(edge) {
-    var to = edge.to.position;
-    var i6 = edge.idx * 6;
+    if(edge.idx <= edgesMeshes.length && undefined != edgesMeshes[edge.idx]) {
+      edgesMeshes[edge.idx].geo.vertices[1].x = edge.to.position.x
+      edgesMeshes[edge.idx].geo.vertices[1].y = edge.to.position.y
+      edgesMeshes[edge.idx].geo.vertices[1].z = edge.to.position.z
+      positionDirtyMeshes.push(edge.idx)
+    }
+  }
 
-    points[i6 + 3] = to.x;
-    points[i6 + 4] = to.y;
-    points[i6 + 5] = to.z;
-
-    positionDirty = true;
+  function toWidth(edge) {
+    if(edge.idx <= edgesMeshes.length && undefined != edgesMeshes[edge.idx]) {
+      edgesMeshes[edge.idx].material.uniforms.lineWidth.value=edge.width;
+    }
   }
 }
 
-},{"three":77}],8:[function(require,module,exports){
+},{"three":78,"three.meshline":77}],8:[function(require,module,exports){
 /**
  * Moves camera to given point, and stops it and given radius
  */
@@ -736,7 +821,7 @@ function flyTo(camera, to, radius) {
   camera.position.z = cameraEndPos.z;
 }
 
-},{"./intersect.js":11,"three":77}],9:[function(require,module,exports){
+},{"./intersect.js":11,"three":78}],9:[function(require,module,exports){
 /**
  * Gives an index of a node under mouse coordinates
  */
@@ -990,7 +1075,7 @@ function createHitTest(domElement) {
   }
 }
 
-},{"ngraph.events":44,"three":77}],10:[function(require,module,exports){
+},{"ngraph.events":44,"three":78}],10:[function(require,module,exports){
 var FlyControls = require('three.fly');
 var eventify = require('ngraph.events');
 var THREE = require('three');
@@ -1070,7 +1155,7 @@ function createInput(camera, graph, domElement) {
   }
 }
 
-},{"./hitTest.js":9,"ngraph.events":44,"three":77,"three.fly":75}],11:[function(require,module,exports){
+},{"./hitTest.js":9,"ngraph.events":44,"three":78,"three.fly":75}],11:[function(require,module,exports){
 module.exports = intersect;
 
 /**
@@ -1268,11 +1353,11 @@ module.exports = [
 
 },{}],15:[function(require,module,exports){
 var THREE = require('three');
-var particleMaterial = require('./createMaterial.js')();
 
 module.exports = nodeView;
 
-function nodeView(scene) {
+function nodeView(scene, options) {
+  var particleMaterial = require('./createMaterial.js')();
   var total;
   var nodes;
   var colors, points, sizes;
@@ -1290,11 +1375,15 @@ function nodeView(scene) {
     init: init,
     update: update,
     needsUpdate: needsUpdate,
-    getBoundingSphere: getBoundingSphere
+    getBoundingSphere: getBoundingSphere,
+    setNodePosition: position,
+    setNodeColor: color,
+    setNodeSize: size,
+    refresh: refresh
   };
 
   function needsUpdate() {
-    return colorDirty || sizeDirty;
+    return colorDirty || sizeDirty || positionDirty;
   }
 
   function color(node) {
@@ -1376,9 +1465,18 @@ function nodeView(scene) {
       var node = nodes[i];
       // first make sure any update to underlying node properties result in
       // graph update:
-      node.connect(nodeConnector);
+      if (options.activeNode) node.connect(nodeConnector);
+    }
 
-      // then invoke first-time node rendering
+    refresh();
+  }
+
+  /**
+   * Forces renderer to refresh positions/colors/sizes for each model.
+   */
+  function refresh() {
+    for (var i = 0; i < total; ++i) {
+      var node = nodes[i];
       position(node);
       color(node);
       size(node);
@@ -1387,24 +1485,28 @@ function nodeView(scene) {
 
   function disconnectOldNodes() {
     if (!nodes) return;
+    if (!options.activeNode) return;
+
     for (var i = 0; i < nodes.length; ++i) {
       nodes[i].disconnect(nodeConnector);
     }
   }
 }
 
-},{"./createMaterial.js":5,"three":77}],16:[function(require,module,exports){
+},{"./createMaterial.js":5,"three":78}],16:[function(require,module,exports){
 /**
  * manages view for tooltips shown when user hover over a node
  */
 module.exports = createTooltipView;
 
 var tooltipStyle = require('../style/style.js');
-require('insert-css')(tooltipStyle);
+var insertCSS = require('insert-css');
 
 var elementClass = require('element-class');
 
 function createTooltipView(container) {
+  insertCSS(tooltipStyle);
+
   var view = {
     show: show,
     hide: hide
@@ -1438,7 +1540,7 @@ function createTooltipView(container) {
   }
 }
 
-},{"../style/style.js":79,"element-class":20,"insert-css":43}],17:[function(require,module,exports){
+},{"../style/style.js":80,"element-class":20,"insert-css":43}],17:[function(require,module,exports){
 /**
  * Controls physics engine settings, like spring length, drag coefficient, etc.
  *
@@ -6525,310 +6627,360 @@ module.exports = function (options) {
 }
 
 },{"ngraph.expose":45,"ngraph.merge":55,"ngraph.random":72}],53:[function(require,module,exports){
-module.exports = {
-  ladder: ladder,
-  complete: complete,
-  completeBipartite: completeBipartite,
-  balancedBinTree: balancedBinTree,
-  path: path,
-  circularLadder: circularLadder,
-  grid: grid,
-  grid3: grid3,
-  noLinks: noLinks,
-  wattsStrogatz: wattsStrogatz
-};
-
 var createGraph = require('ngraph.graph');
 
-function ladder(n) {
-/**
- * Ladder graph is a graph in form of ladder
- * @param {Number} n Represents number of steps in the ladder
- */
-  if (!n || n < 0) {
-    throw new Error("Invalid number of nodes");
-  }
+module.exports = factory(createGraph);
 
-  var g = createGraph(),
-      i;
+// Allow other developers have their own createGraph
+module.exports.factory = factory;
 
-  for (i = 0; i < n - 1; ++i) {
-    g.addLink(i, i + 1);
-    // first row
-    g.addLink(n + i, n + i + 1);
-    // second row
-    g.addLink(i, n + i);
-    // ladder's step
-  }
+function factory(createGraph) {
+  return {
+    ladder: ladder,
+    complete: complete,
+    completeBipartite: completeBipartite,
+    balancedBinTree: balancedBinTree,
+    path: path,
+    circularLadder: circularLadder,
+    grid: grid,
+    grid3: grid3,
+    noLinks: noLinks,
+    wattsStrogatz: wattsStrogatz,
+    cliqueCircle: cliqueCircle
+  };
 
-  g.addLink(n - 1, 2 * n - 1);
-  // last step in the ladder;
 
-  return g;
-}
-
-function circularLadder(n) {
-/**
- * Circular ladder with n steps.
- *
- * @param {Number} n of steps in the ladder.
- */
+  function ladder(n) {
+  /**
+  * Ladder graph is a graph in form of ladder
+  * @param {Number} n Represents number of steps in the ladder
+  */
     if (!n || n < 0) {
-        throw new Error("Invalid number of nodes");
+      throw new Error("Invalid number of nodes");
     }
 
-    var g = ladder(n);
+    var g = createGraph(),
+        i;
 
-    g.addLink(0, n - 1);
-    g.addLink(n, 2 * n - 1);
+    for (i = 0; i < n - 1; ++i) {
+      g.addLink(i, i + 1);
+      // first row
+      g.addLink(n + i, n + i + 1);
+      // second row
+      g.addLink(i, n + i);
+      // ladder's step
+    }
+
+    g.addLink(n - 1, 2 * n - 1);
+    // last step in the ladder;
+
     return g;
-}
-
-function complete(n) {
-/**
- * Complete graph Kn.
- *
- * @param {Number} n represents number of nodes in the complete graph.
- */
-  if (!n || n < 1) {
-    throw new Error("At least two nodes are expected for complete graph");
   }
 
-  var g = createGraph(),
-      i,
-      j;
+  function circularLadder(n) {
+  /**
+  * Circular ladder with n steps.
+  *
+  * @param {Number} n of steps in the ladder.
+  */
+      if (!n || n < 0) {
+          throw new Error("Invalid number of nodes");
+      }
 
-  for (i = 0; i < n; ++i) {
-    for (j = i + 1; j < n; ++j) {
-      if (i !== j) {
+      var g = ladder(n);
+
+      g.addLink(0, n - 1);
+      g.addLink(n, 2 * n - 1);
+      return g;
+  }
+
+  function complete(n) {
+  /**
+  * Complete graph Kn.
+  *
+  * @param {Number} n represents number of nodes in the complete graph.
+  */
+    if (!n || n < 1) {
+      throw new Error("At least two nodes are expected for complete graph");
+    }
+
+    var g = createGraph(),
+        i,
+        j;
+
+    for (i = 0; i < n; ++i) {
+      for (j = i + 1; j < n; ++j) {
+        if (i !== j) {
+          g.addLink(i, j);
+        }
+      }
+    }
+
+    return g;
+  }
+
+  function completeBipartite (n, m) {
+  /**
+  * Complete bipartite graph K n,m. Each node in the
+  * first partition is connected to all nodes in the second partition.
+  *
+  * @param {Number} n represents number of nodes in the first graph partition
+  * @param {Number} m represents number of nodes in the second graph partition
+  */
+    if (!n || !m || n < 0 || m < 0) {
+      throw new Error("Graph dimensions are invalid. Number of nodes in each partition should be greater than 0");
+    }
+
+    var g = createGraph(),
+        i, j;
+
+    for (i = 0; i < n; ++i) {
+      for (j = n; j < n + m; ++j) {
         g.addLink(i, j);
       }
     }
-  }
 
-  return g;
-}
-
-function completeBipartite (n, m) {
-/**
- * Complete bipartite graph K n,m. Each node in the
- * first partition is connected to all nodes in the second partition.
- *
- * @param {Number} n represents number of nodes in the first graph partition
- * @param {Number} m represents number of nodes in the second graph partition
- */
-  if (!n || !m || n < 0 || m < 0) {
-    throw new Error("Graph dimensions are invalid. Number of nodes in each partition should be greater than 0");
-  }
-
-  var g = createGraph(),
-      i, j;
-
-  for (i = 0; i < n; ++i) {
-    for (j = n; j < n + m; ++j) {
-      g.addLink(i, j);
-    }
-  }
-
-  return g;
-}
-
-function path(n) {
-/**
- * Path graph with n steps.
- *
- * @param {Number} n number of nodes in the path
- */
-  if (!n || n < 0) {
-    throw new Error("Invalid number of nodes");
-  }
-
-  var g = createGraph(),
-      i;
-
-  g.addNode(0);
-
-  for (i = 1; i < n; ++i) {
-    g.addLink(i - 1, i);
-  }
-
-  return g;
-}
-
-
-function grid(n, m) {
-/**
- * Grid graph with n rows and m columns.
- *
- * @param {Number} n of rows in the graph.
- * @param {Number} m of columns in the graph.
- */
-  if (n < 1 || m < 1) {
-    throw new Error("Invalid number of nodes in grid graph");
-  }
-  var g = createGraph(),
-      i,
-      j;
-  if (n === 1 && m === 1) {
-    g.addNode(0);
     return g;
   }
 
-  for (i = 0; i < n; ++i) {
-    for (j = 0; j < m; ++j) {
-      var node = i + j * n;
-      if (i > 0) { g.addLink(node, i - 1 + j * n); }
-      if (j > 0) { g.addLink(node, i + (j - 1) * n); }
+  function path(n) {
+  /**
+  * Path graph with n steps.
+  *
+  * @param {Number} n number of nodes in the path
+  */
+    if (!n || n < 0) {
+      throw new Error("Invalid number of nodes");
     }
-  }
 
-  return g;
-}
+    var g = createGraph(),
+        i;
 
-function grid3(n, m, z) {
-/**
- * 3D grid with n rows and m columns and z levels.
- *
- * @param {Number} n of rows in the graph.
- * @param {Number} m of columns in the graph.
- * @param {Number} z of levels in the graph.
- */
-  if (n < 1 || m < 1 || z < 1) {
-    throw new Error("Invalid number of nodes in grid3 graph");
-  }
-  var g = createGraph(),
-      i, j, k;
-
-  if (n === 1 && m === 1 && z === 1) {
     g.addNode(0);
+
+    for (i = 1; i < n; ++i) {
+      g.addLink(i - 1, i);
+    }
+
     return g;
   }
 
-  for (k = 0; k < z; ++k) {
+
+  function grid(n, m) {
+  /**
+  * Grid graph with n rows and m columns.
+  *
+  * @param {Number} n of rows in the graph.
+  * @param {Number} m of columns in the graph.
+  */
+    if (n < 1 || m < 1) {
+      throw new Error("Invalid number of nodes in grid graph");
+    }
+    var g = createGraph(),
+        i,
+        j;
+    if (n === 1 && m === 1) {
+      g.addNode(0);
+      return g;
+    }
+
     for (i = 0; i < n; ++i) {
       for (j = 0; j < m; ++j) {
-        var level = k * n * m;
-        var node = i + j * n + level;
-        if (i > 0) { g.addLink(node, i - 1 + j * n + level); }
-        if (j > 0) { g.addLink(node, i + (j - 1) * n + level); }
-        if (k > 0) { g.addLink(node, i + j * n + (k - 1) * n * m ); }
+        var node = i + j * n;
+        if (i > 0) { g.addLink(node, i - 1 + j * n); }
+        if (j > 0) { g.addLink(node, i + (j - 1) * n); }
+      }
+    }
+
+    return g;
+  }
+
+  function grid3(n, m, z) {
+  /**
+  * 3D grid with n rows and m columns and z levels.
+  *
+  * @param {Number} n of rows in the graph.
+  * @param {Number} m of columns in the graph.
+  * @param {Number} z of levels in the graph.
+  */
+    if (n < 1 || m < 1 || z < 1) {
+      throw new Error("Invalid number of nodes in grid3 graph");
+    }
+    var g = createGraph(),
+        i, j, k;
+
+    if (n === 1 && m === 1 && z === 1) {
+      g.addNode(0);
+      return g;
+    }
+
+    for (k = 0; k < z; ++k) {
+      for (i = 0; i < n; ++i) {
+        for (j = 0; j < m; ++j) {
+          var level = k * n * m;
+          var node = i + j * n + level;
+          if (i > 0) { g.addLink(node, i - 1 + j * n + level); }
+          if (j > 0) { g.addLink(node, i + (j - 1) * n + level); }
+          if (k > 0) { g.addLink(node, i + j * n + (k - 1) * n * m ); }
+        }
+      }
+    }
+
+    return g;
+  }
+
+  function balancedBinTree(n) {
+  /**
+  * Balanced binary tree with n levels.
+  *
+  * @param {Number} n of levels in the binary tree
+  */
+    if (n < 0) {
+      throw new Error("Invalid number of nodes in balanced tree");
+    }
+    var g = createGraph(),
+        count = Math.pow(2, n),
+        level;
+
+    if (n === 0) {
+      g.addNode(1);
+    }
+
+    for (level = 1; level < count; ++level) {
+      var root = level,
+        left = root * 2,
+        right = root * 2 + 1;
+
+      g.addLink(root, left);
+      g.addLink(root, right);
+    }
+
+    return g;
+  }
+
+  function noLinks(n) {
+  /**
+  * Graph with no links
+  *
+  * @param {Number} n of nodes in the graph
+  */
+    if (n < 0) {
+      throw new Error("Number of nodes should be >= 0");
+    }
+
+    var g = createGraph(), i;
+    for (i = 0; i < n; ++i) {
+      g.addNode(i);
+    }
+
+    return g;
+  }
+
+  function cliqueCircle(cliqueCount, cliqueSize) {
+  /**
+  * A circular graph with cliques instead of individual nodes
+  *
+  * @param {Number} cliqueCount number of cliques inside circle
+  * @param {Number} cliqueSize number of nodes inside each clique
+  */
+
+    if (cliqueCount < 1) throw new Error('Invalid number of cliqueCount in cliqueCircle');
+    if (cliqueSize < 1) throw new Error('Invalid number of cliqueSize in cliqueCircle');
+
+    var graph = createGraph();
+
+    for (var i = 0; i < cliqueCount; ++i) {
+      appendClique(cliqueSize, i * cliqueSize)
+
+      if (i > 0) {
+        graph.addLink(i * cliqueSize, i * cliqueSize - 1);
+      }
+    }
+    graph.addLink(0, graph.getNodesCount() - 1);
+
+    return graph;
+
+    function appendClique(size, from) {
+      for (var i = 0; i < size; ++i) {
+        graph.addNode(i + from)
+      }
+
+      for (var i = 0; i < size; ++i) {
+        for (var j = i + 1; j < size; ++j) {
+          graph.addLink(i + from, j + from)
+        }
       }
     }
   }
 
-  return g;
-}
+  function wattsStrogatz(n, k, p, seed) {
+  /**
+  * Watts-Strogatz small-world graph.
+  *
+  * @param {Number} n The number of nodes
+  * @param {Number} k Each node is connected to k nearest neighbors in ring topology
+  * @param {Number} p The probability of rewiring each edge
 
-function balancedBinTree(n) {
-/**
- * Balanced binary tree with n levels.
- *
- * @param {Number} n of levels in the binary tree
- */
-  if (n < 0) {
-    throw new Error("Invalid number of nodes in balanced tree");
-  }
-  var g = createGraph(),
-      count = Math.pow(2, n),
-      level;
-
-  if (n === 0) {
-    g.addNode(1);
-  }
-
-  for (level = 1; level < count; ++level) {
-    var root = level,
-      left = root * 2,
-      right = root * 2 + 1;
-
-    g.addLink(root, left);
-    g.addLink(root, right);
-  }
-
-  return g;
-}
-
-function noLinks(n) {
-/**
- * Graph with no links
- *
- * @param {Number} n of nodes in the graph
- */
-  if (n < 0) {
-    throw new Error("Number of nodes shoul be >= 0");
-  }
-
-  var g = createGraph(), i;
-  for (i = 0; i < n; ++i) {
-    g.addNode(i);
-  }
-
-  return g;
-}
-
-function wattsStrogatz(n, k, p, seed) {
-/**
- * Watts-Strogatz small-world graph.
- *
- * @param {Number} n The number of nodes
- * @param {Number} k Each node is connected to k nearest neighbors in ring topology
- * @param {Number} p The probability of rewiring each edge
-
- * @see https://github.com/networkx/networkx/blob/master/networkx/generators/random_graphs.py
- */
-  if (k >= n) throw new Error('Choose smaller `k`. It cannot be larger than number of nodes `n`');
+  * @see https://github.com/networkx/networkx/blob/master/networkx/generators/random_graphs.py
+  */
+    if (k >= n) throw new Error('Choose smaller `k`. It cannot be larger than number of nodes `n`');
 
 
-  var random = require('ngraph.random').random(seed || 42);
+    var random = require('ngraph.random').random(seed || 42);
 
-  var g = createGraph(), i, to;
-  for (i = 0; i < n; ++i) {
-    g.addNode(i);
-  }
-
-  // connect each node to k/2 neighbors
-  var neighborsSize = Math.floor(k/2 + 1);
-  for (var j = 1; j < neighborsSize; ++j) {
+    var g = createGraph(), i, to;
     for (i = 0; i < n; ++i) {
-      to = (j + i) % n;
-      g.addLink(i, to);
+      g.addNode(i);
     }
-  }
 
-  // rewire edges from each node
-  // loop over all nodes in order (label) and neighbors in order (distance)
-  // no self loops or multiple edges allowed
-  for (j = 1; j < neighborsSize; ++j) {
-    for (i = 0; i < n; ++i) {
-      if (random.nextDouble() < p) {
-        var from = i;
+    // connect each node to k/2 neighbors
+    var neighborsSize = Math.floor(k/2 + 1);
+    for (var j = 1; j < neighborsSize; ++j) {
+      for (i = 0; i < n; ++i) {
         to = (j + i) % n;
-
-        var newTo = random.next(n);
-        var needsRewire = (newTo === from || g.hasLink(from, newTo));
-        if (needsRewire && g.getLinks(from).length === n - 1) {
-          // we cannot rewire this node, it has too many links.
-          continue;
-        }
-        // Enforce no self-loops or multiple edges
-        while (needsRewire) {
-          newTo = random.next(n);
-          needsRewire = (newTo === from || g.hasLink(from, newTo));
-        }
-        var link = g.hasLink(from, to);
-        g.removeLink(link);
-        g.addLink(from, newTo);
+        g.addLink(i, to);
       }
     }
-  }
 
-  return g;
+    // rewire edges from each node
+    // loop over all nodes in order (label) and neighbors in order (distance)
+    // no self loops or multiple edges allowed
+    for (j = 1; j < neighborsSize; ++j) {
+      for (i = 0; i < n; ++i) {
+        if (random.nextDouble() < p) {
+          var from = i;
+          to = (j + i) % n;
+
+          var newTo = random.next(n);
+          var needsRewire = (newTo === from || g.hasLink(from, newTo));
+          if (needsRewire && g.getLinks(from).length === n - 1) {
+            // we cannot rewire this node, it has too many links.
+            continue;
+          }
+          // Enforce no self-loops or multiple edges
+          while (needsRewire) {
+            newTo = random.next(n);
+            needsRewire = (newTo === from || g.hasLink(from, newTo));
+          }
+          var link = g.hasLink(from, to);
+          g.removeLink(link);
+          g.addLink(from, newTo);
+        }
+      }
+    }
+
+    return g;
+  }
 }
 
 },{"ngraph.graph":54,"ngraph.random":72}],54:[function(require,module,exports){
 /**
  * @fileOverview Contains definition of the core graph object.
  */
+
+// TODO: need to change storage layer:
+// 1. Be able to get all nodes O(1)
+// 2. Be able to get number of links O(1)
 
 /**
  * @example
@@ -6851,12 +7003,22 @@ function createGraph(options) {
   // array is used to speed up all links enumeration. This is inefficient
   // in terms of memory, but simplifies coding.
   options = options || {};
-  if (options.uniqueLinkId === undefined) {
-    // Request each link id to be unique between same nodes. This negatively
-    // impacts `addLink()` performance (O(n), where n - number of edges of each
-    // vertex), but makes operations with multigraphs more accessible.
-    options.uniqueLinkId = true;
+  if ('uniqueLinkId' in options) {
+    console.warn(
+      'ngraph.graph: Starting from version 0.14 `uniqueLinkId` is deprecated.\n' +
+      'Use `multigraph` option instead\n',
+      '\n',
+      'Note: there is also change in default behavior: From now own each graph\n'+
+      'is considered to be not a multigraph by default (each edge is unique).'
+    );
+
+    options.multigraph = options.uniqueLinkId;
   }
+
+  // Dear reader, the non-multigraphs do not guarantee that there is only
+  // one link for a given pair of node. When this option is set to false
+  // we can save some memory and CPU (18% faster for non-multigraph);
+  if (options.multigraph === undefined) options.multigraph = false;
 
   var nodes = typeof Object.create === 'function' ? Object.create(null) : {},
     links = [],
@@ -6866,7 +7028,7 @@ function createGraph(options) {
     suspendEvents = 0,
 
     forEachNode = createNodeIterator(),
-    createLink = options.uniqueLinkId ? createUniqueLink : createSingleLink,
+    createLink = options.multigraph ? createUniqueLink : createSingleLink,
 
     // Our graph API provides means to listen to graph changes. Users can subscribe
     // to be notified about changes in the graph by using `on` method. However
@@ -6945,14 +7107,14 @@ function createGraph(options) {
      *
      * @return number of nodes in the graph.
      */
-    getNodesCount: function() {
+    getNodesCount: function () {
       return nodesCount;
     },
 
     /**
      * Gets total number of links in the graph.
      */
-    getLinksCount: function() {
+    getLinksCount: function () {
       return links.length;
     },
 
@@ -7025,6 +7187,16 @@ function createGraph(options) {
     hasLink: getLink,
 
     /**
+     * Detects whether there is a node with given id
+     * 
+     * Operation complexity is O(1)
+     * NOTE: this function is synonim for getNode()
+     *
+     * @returns node if there is one; Falsy value otherwise.
+     */
+    hasNode: getNode,
+
+    /**
      * Gets an edge between two nodes.
      * Operation complexity is O(n) where n - number of links of a node.
      *
@@ -7087,14 +7259,13 @@ function createGraph(options) {
 
     var node = getNode(nodeId);
     if (!node) {
-      node = new Node(nodeId);
+      node = new Node(nodeId, data);
       nodesCount++;
       recordNodeChange(node, 'add');
     } else {
+      node.data = data;
       recordNodeChange(node, 'update');
     }
-
-    node.data = data;
 
     nodes[nodeId] = node;
 
@@ -7114,10 +7285,11 @@ function createGraph(options) {
 
     enterModification();
 
-    if (node.links) {
-      while (node.links.length) {
-        var link = node.links[0];
-        removeLink(link);
+    var prevLinks = node.links;
+    if (prevLinks) {
+      node.links = null;
+      for(var i = 0; i < prevLinks.length; ++i) {
+        removeLink(prevLinks[i]);
       }
     }
 
@@ -7365,10 +7537,10 @@ function indexOfElementInArray(element, array) {
 /**
  * Internal structure to represent node;
  */
-function Node(id) {
+function Node(id, data) {
   this.id = id;
   this.links = null;
-  this.data = null;
+  this.data = data;
 }
 
 function addLinkToNode(node, link) {
@@ -7401,7 +7573,7 @@ function hashCode(str) {
 }
 
 function makeLinkId(fromId, toId) {
-  return hashCode(fromId.toString() + '👉 ' + toId.toString());
+  return fromId.toString() + '👉 ' + toId.toString();
 }
 
 },{"ngraph.events":44}],55:[function(require,module,exports){
@@ -9528,6 +9700,485 @@ function createKeyMap() {
 }
 
 },{}],77:[function(require,module,exports){
+;(function() {
+
+"use strict";
+
+var root = this
+
+var has_require = typeof require !== 'undefined'
+
+var THREE = root.THREE || has_require && require('three')
+if( !THREE )
+	throw new Error( 'EquirectangularToCubemap requires three.js' )
+
+function MeshLine() {
+
+	this.positions = [];
+
+	this.previous = [];
+	this.next = [];
+	this.side = [];
+	this.width = [];
+	this.indices_array = [];
+	this.uvs = [];
+	this.counters = [];
+	this.geometry = new THREE.BufferGeometry();
+
+	this.widthCallback = null;
+
+}
+
+MeshLine.prototype.setGeometry = function( g, c ) {
+
+	this.widthCallback = c;
+
+	this.positions = [];
+	this.counters = [];
+
+	if( g instanceof THREE.Geometry ) {
+		for( var j = 0; j < g.vertices.length; j++ ) {
+			var v = g.vertices[ j ];
+			var c = j/g.vertices.length;
+			this.positions.push( v.x, v.y, v.z );
+			this.positions.push( v.x, v.y, v.z );
+			this.counters.push(c);
+			this.counters.push(c);
+		}
+	}
+
+	if( g instanceof THREE.BufferGeometry ) {
+		// read attribute positions ?
+	}
+
+	if( g instanceof Float32Array || g instanceof Array ) {
+		for( var j = 0; j < g.length; j += 3 ) {
+			var c = j/g.length;
+			this.positions.push( g[ j ], g[ j + 1 ], g[ j + 2 ] );
+			this.positions.push( g[ j ], g[ j + 1 ], g[ j + 2 ] );
+			this.counters.push(c);
+			this.counters.push(c);
+		}
+	}
+
+	this.process();
+
+}
+
+MeshLine.prototype.compareV3 = function( a, b ) {
+
+	var aa = a * 6;
+	var ab = b * 6;
+	return ( this.positions[ aa ] === this.positions[ ab ] ) && ( this.positions[ aa + 1 ] === this.positions[ ab + 1 ] ) && ( this.positions[ aa + 2 ] === this.positions[ ab + 2 ] );
+
+}
+
+MeshLine.prototype.copyV3 = function( a ) {
+
+	var aa = a * 6;
+	return [ this.positions[ aa ], this.positions[ aa + 1 ], this.positions[ aa + 2 ] ];
+
+}
+
+MeshLine.prototype.process = function() {
+
+	var l = this.positions.length / 6;
+
+	this.previous = [];
+	this.next = [];
+	this.side = [];
+	this.width = [];
+	this.indices_array = [];
+	this.uvs = [];
+
+	for( var j = 0; j < l; j++ ) {
+		this.side.push( 1 );
+		this.side.push( -1 );
+	}
+
+	var w;
+	for( var j = 0; j < l; j++ ) {
+		if( this.widthCallback ) w = this.widthCallback( j / ( l -1 ) );
+		else w = 1;
+		this.width.push( w );
+		this.width.push( w );
+	}
+
+	for( var j = 0; j < l; j++ ) {
+		this.uvs.push( j / ( l - 1 ), 0 );
+		this.uvs.push( j / ( l - 1 ), 1 );
+	}
+
+	var v;
+
+	if( this.compareV3( 0, l - 1 ) ){
+		v = this.copyV3( l - 2 );
+	} else {
+		v = this.copyV3( 0 );
+	}
+	this.previous.push( v[ 0 ], v[ 1 ], v[ 2 ] );
+	this.previous.push( v[ 0 ], v[ 1 ], v[ 2 ] );
+	for( var j = 0; j < l - 1; j++ ) {
+		v = this.copyV3( j );
+		this.previous.push( v[ 0 ], v[ 1 ], v[ 2 ] );
+		this.previous.push( v[ 0 ], v[ 1 ], v[ 2 ] );
+	}
+
+	for( var j = 1; j < l; j++ ) {
+		v = this.copyV3( j );
+		this.next.push( v[ 0 ], v[ 1 ], v[ 2 ] );
+		this.next.push( v[ 0 ], v[ 1 ], v[ 2 ] );
+	}
+
+	if( this.compareV3( l - 1, 0 ) ){
+		v = this.copyV3( 1 );
+	} else {
+		v = this.copyV3( l - 1 );
+	}
+	this.next.push( v[ 0 ], v[ 1 ], v[ 2 ] );
+	this.next.push( v[ 0 ], v[ 1 ], v[ 2 ] );
+
+	for( var j = 0; j < l - 1; j++ ) {
+		var n = j * 2;
+		this.indices_array.push( n, n + 1, n + 2 );
+		this.indices_array.push( n + 2, n + 1, n + 3 );
+	}
+
+	if (!this.attributes) {
+		this.attributes = {
+			position: new THREE.BufferAttribute( new Float32Array( this.positions ), 3 ),
+			previous: new THREE.BufferAttribute( new Float32Array( this.previous ), 3 ),
+			next: new THREE.BufferAttribute( new Float32Array( this.next ), 3 ),
+			side: new THREE.BufferAttribute( new Float32Array( this.side ), 1 ),
+			width: new THREE.BufferAttribute( new Float32Array( this.width ), 1 ),
+			uv: new THREE.BufferAttribute( new Float32Array( this.uvs ), 2 ),
+			index: new THREE.BufferAttribute( new Uint16Array( this.indices_array ), 1 ),
+			counters: new THREE.BufferAttribute( new Float32Array( this.counters ), 1 )
+		}
+	} else {
+		this.attributes.position.copyArray(new Float32Array(this.positions));
+		this.attributes.position.needsUpdate = true;
+		this.attributes.previous.copyArray(new Float32Array(this.previous));
+		this.attributes.previous.needsUpdate = true;
+		this.attributes.next.copyArray(new Float32Array(this.next));
+		this.attributes.next.needsUpdate = true;
+		this.attributes.side.copyArray(new Float32Array(this.side));
+		this.attributes.side.needsUpdate = true;
+		this.attributes.width.copyArray(new Float32Array(this.width));
+		this.attributes.width.needsUpdate = true;
+		this.attributes.uv.copyArray(new Float32Array(this.uvs));
+		this.attributes.uv.needsUpdate = true;
+		this.attributes.index.copyArray(new Uint16Array(this.indices_array));
+		this.attributes.index.needsUpdate = true;
+    }
+
+	this.geometry.addAttribute( 'position', this.attributes.position );
+	this.geometry.addAttribute( 'previous', this.attributes.previous );
+	this.geometry.addAttribute( 'next', this.attributes.next );
+	this.geometry.addAttribute( 'side', this.attributes.side );
+	this.geometry.addAttribute( 'width', this.attributes.width );
+	this.geometry.addAttribute( 'uv', this.attributes.uv );
+	this.geometry.addAttribute( 'counters', this.attributes.counters );
+
+	this.geometry.setIndex( this.attributes.index );
+
+}
+
+function memcpy (src, srcOffset, dst, dstOffset, length) {
+	var i
+
+	src = src.subarray || src.slice ? src : src.buffer
+	dst = dst.subarray || dst.slice ? dst : dst.buffer
+
+	src = srcOffset ? src.subarray ?
+	src.subarray(srcOffset, length && srcOffset + length) :
+	src.slice(srcOffset, length && srcOffset + length) : src
+
+	if (dst.set) {
+		dst.set(src, dstOffset)
+	} else {
+		for (i=0; i<src.length; i++) {
+			dst[i + dstOffset] = src[i]
+		}
+	}
+
+	return dst
+}
+
+/**
+ * Fast method to advance the line by one position.  The oldest position is removed.
+ * @param position
+ */
+MeshLine.prototype.advance = function(position) {
+
+	var positions = this.attributes.position.array;
+	var previous = this.attributes.previous.array;
+	var next = this.attributes.next.array;
+	var l = positions.length;
+
+	// PREVIOUS
+	memcpy( positions, 0, previous, 0, l );
+
+	// POSITIONS
+	memcpy( positions, 6, positions, 0, l - 6 );
+
+	positions[l - 6] = position.x;
+	positions[l - 5] = position.y;
+	positions[l - 4] = position.z;
+	positions[l - 3] = position.x;
+	positions[l - 2] = position.y;
+	positions[l - 1] = position.z;
+
+    // NEXT
+	memcpy( positions, 6, next, 0, l - 6 );
+
+	next[l - 6]  = position.x;
+	next[l - 5]  = position.y;
+	next[l - 4]  = position.z;
+	next[l - 3]  = position.x;
+	next[l - 2]  = position.y;
+	next[l - 1]  = position.z;
+
+	this.attributes.position.needsUpdate = true;
+	this.attributes.previous.needsUpdate = true;
+	this.attributes.next.needsUpdate = true;
+
+};
+
+function MeshLineMaterial( parameters ) {
+
+	var vertexShaderSource = [
+'precision highp float;',
+'',
+'attribute vec3 position;',
+'attribute vec3 previous;',
+'attribute vec3 next;',
+'attribute float side;',
+'attribute float width;',
+'attribute vec2 uv;',
+'attribute float counters;',
+'',
+'uniform mat4 projectionMatrix;',
+'uniform mat4 modelViewMatrix;',
+'uniform vec2 resolution;',
+'uniform float lineWidth;',
+'uniform vec3 color;',
+'uniform float opacity;',
+'uniform float near;',
+'uniform float far;',
+'uniform float sizeAttenuation;',
+'',
+'varying vec2 vUV;',
+'varying vec4 vColor;',
+'varying float vCounters;',
+'',
+'vec2 fix( vec4 i, float aspect ) {',
+'',
+'    vec2 res = i.xy / i.w;',
+'    res.x *= aspect;',
+'	 vCounters = counters;',
+'    return res;',
+'',
+'}',
+'',
+'void main() {',
+'',
+'    float aspect = resolution.x / resolution.y;',
+'	 float pixelWidthRatio = 1. / (resolution.x * projectionMatrix[0][0]);',
+'',
+'    vColor = vec4( color, opacity );',
+'    vUV = uv;',
+'',
+'    mat4 m = projectionMatrix * modelViewMatrix;',
+'    vec4 finalPosition = m * vec4( position, 1.0 );',
+'    vec4 prevPos = m * vec4( previous, 1.0 );',
+'    vec4 nextPos = m * vec4( next, 1.0 );',
+'',
+'    vec2 currentP = fix( finalPosition, aspect );',
+'    vec2 prevP = fix( prevPos, aspect );',
+'    vec2 nextP = fix( nextPos, aspect );',
+'',
+'	 float pixelWidth = finalPosition.w * pixelWidthRatio;',
+'    float w = 1.8 * pixelWidth * lineWidth * width;',
+'',
+'    if( sizeAttenuation == 1. ) {',
+'        w = 1.8 * lineWidth * width;',
+'    }',
+'',
+'    vec2 dir;',
+'    if( nextP == currentP ) dir = normalize( currentP - prevP );',
+'    else if( prevP == currentP ) dir = normalize( nextP - currentP );',
+'    else {',
+'        vec2 dir1 = normalize( currentP - prevP );',
+'        vec2 dir2 = normalize( nextP - currentP );',
+'        dir = normalize( dir1 + dir2 );',
+'',
+'        vec2 perp = vec2( -dir1.y, dir1.x );',
+'        vec2 miter = vec2( -dir.y, dir.x );',
+'        //w = clamp( w / dot( miter, perp ), 0., 4. * lineWidth * width );',
+'',
+'    }',
+'',
+'    //vec2 normal = ( cross( vec3( dir, 0. ), vec3( 0., 0., 1. ) ) ).xy;',
+'    vec2 normal = vec2( -dir.y, dir.x );',
+'    normal.x /= aspect;',
+'    normal *= .5 * w;',
+'',
+'    vec4 offset = vec4( normal * side, 0.0, 1.0 );',
+'    finalPosition.xy += offset.xy;',
+'',
+'    gl_Position = finalPosition;',
+'',
+'}' ];
+
+	var fragmentShaderSource = [
+		'#extension GL_OES_standard_derivatives : enable',
+'precision mediump float;',
+'',
+'uniform sampler2D map;',
+'uniform sampler2D alphaMap;',
+'uniform float useMap;',
+'uniform float useAlphaMap;',
+'uniform float useDash;',
+'uniform vec2 dashArray;',
+'uniform float visibility;',
+'uniform float alphaTest;',
+'uniform vec2 repeat;',
+'',
+'varying vec2 vUV;',
+'varying vec4 vColor;',
+'varying float vCounters;',
+'',
+'void main() {',
+'',
+'    vec4 c = vColor;',
+'    if( useMap == 1. ) c *= texture2D( map, vUV * repeat );',
+'    if( useAlphaMap == 1. ) c.a *= texture2D( alphaMap, vUV * repeat ).a;',
+'	 if( c.a < alphaTest ) discard;',
+'	 if( useDash == 1. ){',
+'	 	 ',
+'	 }',
+'    gl_FragColor = c;',
+'	 gl_FragColor.a *= step(vCounters,visibility);',
+'}' ];
+
+	function check( v, d ) {
+		if( v === undefined ) return d;
+		return v;
+	}
+
+	THREE.Material.call( this );
+
+	parameters = parameters || {};
+
+	this.lineWidth = check( parameters.lineWidth, 1 );
+	this.map = check( parameters.map, null );
+	this.useMap = check( parameters.useMap, 0 );
+	this.alphaMap = check( parameters.alphaMap, null );
+	this.useAlphaMap = check( parameters.useAlphaMap, 0 );
+	this.color = check( parameters.color, new THREE.Color( 0xffffff ) );
+	this.opacity = check( parameters.opacity, 1 );
+	this.resolution = check( parameters.resolution, new THREE.Vector2( 1, 1 ) );
+	this.sizeAttenuation = check( parameters.sizeAttenuation, 1 );
+	this.near = check( parameters.near, 1 );
+	this.far = check( parameters.far, 1 );
+	this.dashArray = check( parameters.dashArray, [] );
+	this.useDash = ( this.dashArray !== [] ) ? 1 : 0;
+	this.visibility = check( parameters.visibility, 1 );
+	this.alphaTest = check( parameters.alphaTest, 0 );
+	this.repeat = check( parameters.repeat, new THREE.Vector2( 1, 1 ) );
+
+	var material = new THREE.RawShaderMaterial( {
+		uniforms:{
+			lineWidth: { type: 'f', value: this.lineWidth },
+			map: { type: 't', value: this.map },
+			useMap: { type: 'f', value: this.useMap },
+			alphaMap: { type: 't', value: this.alphaMap },
+			useAlphaMap: { type: 'f', value: this.useAlphaMap },
+			color: { type: 'c', value: this.color },
+			opacity: { type: 'f', value: this.opacity },
+			resolution: { type: 'v2', value: this.resolution },
+			sizeAttenuation: { type: 'f', value: this.sizeAttenuation },
+			near: { type: 'f', value: this.near },
+			far: { type: 'f', value: this.far },
+			dashArray: { type: 'v2', value: new THREE.Vector2( this.dashArray[ 0 ], this.dashArray[ 1 ] ) },
+			useDash: { type: 'f', value: this.useDash },
+			visibility: {type: 'f', value: this.visibility},
+			alphaTest: {type: 'f', value: this.alphaTest},
+			repeat: { type: 'v2', value: this.repeat }
+		},
+		vertexShader: vertexShaderSource.join( '\r\n' ),
+		fragmentShader: fragmentShaderSource.join( '\r\n' )
+	});
+
+	delete parameters.lineWidth;
+	delete parameters.map;
+	delete parameters.useMap;
+	delete parameters.alphaMap;
+	delete parameters.useAlphaMap;
+	delete parameters.color;
+	delete parameters.opacity;
+	delete parameters.resolution;
+	delete parameters.sizeAttenuation;
+	delete parameters.near;
+	delete parameters.far;
+	delete parameters.dashArray;
+	delete parameters.visibility;
+	delete parameters.alphaTest;
+	delete parameters.repeat;
+
+	material.type = 'MeshLineMaterial';
+
+	material.setValues( parameters );
+
+	return material;
+
+};
+
+MeshLineMaterial.prototype = Object.create( THREE.Material.prototype );
+MeshLineMaterial.prototype.constructor = MeshLineMaterial;
+
+MeshLineMaterial.prototype.copy = function ( source ) {
+
+	THREE.Material.prototype.copy.call( this, source );
+
+	this.lineWidth = source.lineWidth;
+	this.map = source.map;
+	this.useMap = source.useMap;
+	this.alphaMap = source.alphaMap;
+	this.useAlphaMap = source.useAlphaMap;
+	this.color.copy( source.color );
+	this.opacity = source.opacity;
+	this.resolution.copy( source.resolution );
+	this.sizeAttenuation = source.sizeAttenuation;
+	this.near = source.near;
+	this.far = source.far;
+	this.dashArray.copy( source.dashArray );
+	this.useDash = source.useDash;
+	this.visibility = source.visibility;
+	this.alphaTest = source.alphaTest;
+	this.repeat.copy( source.repeat );
+
+	return this;
+
+};
+
+if( typeof exports !== 'undefined' ) {
+	if( typeof module !== 'undefined' && module.exports ) {
+		exports = module.exports = { MeshLine: MeshLine, MeshLineMaterial: MeshLineMaterial };
+	}
+	exports.MeshLine = MeshLine;
+	exports.MeshLineMaterial = MeshLineMaterial;
+}
+else {
+	root.MeshLine = MeshLine;
+	root.MeshLineMaterial = MeshLineMaterial;
+}
+
+}).call(this);
+
+
+},{"three":78}],78:[function(require,module,exports){
 var self = self || {};// File:src/Three.js
 
 /**
@@ -45716,7 +46367,7 @@ if (typeof exports !== 'undefined') {
   this['THREE'] = THREE;
 }
 
-},{}],78:[function(require,module,exports){
+},{}],79:[function(require,module,exports){
 /**
  * This file contains all possible configuration optins for the renderer
  */
@@ -45744,6 +46395,12 @@ function validateOptions(options) {
    */
   options.clearColor = typeof options.clearColor === 'number' ? options.clearColor : 0x000000;
 
+
+  /**
+   * Clear color opacity from 0 (transparent) to 1 (opaque); Default value is 1;
+   */
+  options.clearAlpha = typeof options.clearAlpha === 'number' ? options.clearAlpha : 1;
+
   /**
    * Layout algorithm factory. Valid layout algorithms are required to have just two methods:
    * `getNodePosition(nodeId)` and `step()`. See `pixel.layout` module for the
@@ -45761,6 +46418,22 @@ function validateOptions(options) {
    */
   options.node = typeof options.node === 'function' ? options.node : defaultNode;
 
+  /**
+   * Experimental API: When activeNode is explicitly set to false, then no proxy
+   * object is created. Which means actual updates to the node have to be manual
+   *
+   * TODO: Extend this documentation if this approach sticks.
+   */
+  options.activeNode = typeof options.activeNode === 'undefined' ? true : options.activeNode;
+
+  /**
+   * Experimental API: When activeLink is explicitly set to false, then no proxy
+   * object is created for links. Which means actual updates to the link have to be manual
+   *
+   * TODO: Extend this documentation if this approach sticks.
+   */
+  options.activeLink = typeof options.activeLink === 'undefined' ? true : options.activeLink;
+
   return options;
 }
 
@@ -45772,7 +46445,7 @@ function defaultLink(/* link */) {
   return { fromColor: 0xFFFFFF,  toColor: 0xFFFFFF };
 }
 
-},{"pixel.layout":73}],79:[function(require,module,exports){
+},{"pixel.layout":73}],80:[function(require,module,exports){
 module.exports = [
 '.ngraph-tooltip {',
 '  position: absolute;',
