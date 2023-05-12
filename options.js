@@ -1,5 +1,5 @@
 /**
- * This file contains all possible configuration optins for the renderer
+ * This file contains all possible configuration options for the renderer
  */
 module.exports = validateOptions;
 
